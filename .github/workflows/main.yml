@@ -1,0 +1,13 @@
+on:
+  workflow_dispatch:
+  
+jobs:
+  cross-compile:
+    name: cross compile releases
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: install cross
+      run: cargo install cross --git https://github.com/cross-rs/cross
+    - name: cross compile for orangepi
+      run: cross build --target aarch64-unknown-linux-musl
