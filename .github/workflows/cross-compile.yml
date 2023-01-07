@@ -13,6 +13,8 @@ jobs:
       run: cross build --release --target aarch64-linux-android
     - name: cross compile for orangepi
       run: cross build --release --target aarch64-unknown-linux-musl
+    - run: cross build --release --target arm-unknown-linux-musleabi
+    - run: cross build --release --target x86_64-pc-windows-gnu
     - uses: actions/upload-artifact@v3
       with:
         name: binaries
