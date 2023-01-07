@@ -10,4 +10,12 @@ jobs:
     - name: install cross
       run: cargo install cross --git https://github.com/cross-rs/cross
     - name: cross compile for orangepi
-      run: cross build --target aarch64-unknown-linux-musl
+      run: cross build --release --target aarch64-unknown-linux-musl
+    - name: cross compile for wasm-wasi
+      run: cross build --release --target wasm32-wasi
+    - name: cross compile for android
+      run: cross build --release --target arm-linux-androideabi
+    - uses: actions/upload-artifact@v3
+      with:
+        name: binaries
+        path: target/
