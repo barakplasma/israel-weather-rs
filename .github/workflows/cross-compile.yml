@@ -1,5 +1,8 @@
+name: cross-compile release
+
 on:
-  workflow_dispatch:
+  release:
+    types: [created]
   
 jobs:
   cross-compile:
@@ -7,15 +10,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
-    - name: install cross
-      run: cargo install cross --git https://github.com/cross-rs/cross
-    - name: cross compile for android
-      run: cross build --release --target aarch64-linux-android
-    - name: cross compile for orangepi
-      run: cross build --release --target aarch64-unknown-linux-musl
-    - run: cross build --release --target arm-unknown-linux-musleabi
-    - run: cross build --release --target x86_64-pc-windows-gnu
+    - run: cargo install cross --git https://github.com/cross-rs/cross
+    - run: cross build --release --target aarch64-linux-android
     - uses: actions/upload-artifact@v3
       with:
-        name: binaries
-        path: target/**/release/weather
+        path: target/aarch64-linux-android/release/weather
+    - run: cross build --release --target aarch64-unknown-linux-musl
+    - uses: actions/upload-artifact@v3
+      with:
+        path: target/aarch64-unknown-linux-musl/release/weather
+    - run: cross build --release --target arm-unknown-linux-musleabi
+    - uses: actions/upload-artifact@v3
+      with:
+        path: target/arm-unknown-linux-musleabi/release/weather
