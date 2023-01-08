@@ -1,5 +1,5 @@
 [package]
-name = "israel-weather-rs"
+name = "weather"
 version = "0.1.1"
 edition = "2021"
 
