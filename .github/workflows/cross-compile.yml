@@ -14,12 +14,15 @@ jobs:
     - run: cross build --release --target aarch64-linux-android
     - uses: actions/upload-artifact@v3
       with:
+        name: aarch64-linux-android_weather
         path: target/aarch64-linux-android/release/weather
     - run: cross build --release --target aarch64-unknown-linux-musl
     - uses: actions/upload-artifact@v3
       with:
+        name: aarch64-unknown-linux-musl_weather
         path: target/aarch64-unknown-linux-musl/release/weather
     - run: cross build --release --target arm-unknown-linux-musleabi
     - uses: actions/upload-artifact@v3
       with:
+        name: arm-unknown-linux-musleabi_weather
         path: target/arm-unknown-linux-musleabi/release/weather
