@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_xml_rs::{from_str};
 use std::time::Duration;
@@ -64,7 +65,7 @@ pub fn get_israeli_weather_forecast() -> Result<LocationForecasts, serde_xml_rs:
         .into_string()
         .expect("invalid xml");
 
-    let forecasts: Result<LocationForecasts, serde_xml_rs::Error> = from_str(&forecast_xml);
+    let forecasts: Result<LocationForecasts, serde_xml_rs::Error> = from_str(&forecast_xml).iter_mut().map(transform_forecast_times_to_datetimes).into();
 
     return forecasts;
 }
