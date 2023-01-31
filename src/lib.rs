@@ -54,7 +54,7 @@ pub struct Forecast {
 }
 
 static WEATHER_URL: &str = "https://ims.gov.il/sites/default/files/ims_data/xml_files/isr_cities_1week_6hr_forecast.xml";
-use std::time::Duration
+
 let duration = Duration::new(180, 0);
 pub fn get_israeli_weather_forecast() -> Result<LocationForecasts, serde_xml_rs::Error> {
     let forecast_xml = ureq::get(WEATHER_URL)
