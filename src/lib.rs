@@ -56,6 +56,7 @@ static WEATHER_URL: &str = "https://ims.gov.il/sites/default/files/ims_data/xml_
 pub fn get_israeli_weather_forecast() -> Result<LocationForecasts, serde_xml_rs::Error> {
     let forecast_xml = ureq::get(WEATHER_URL)
         .call()
+        .timeout_read(180_0000)
         .expect("failed to fetch forecast")
         .into_string()
         .expect("invalid xml");
