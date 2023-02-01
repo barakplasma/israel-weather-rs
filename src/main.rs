@@ -22,8 +22,3 @@ fn print_location(location: &weather::Location) {
         println!("");
     }
 }
-
-// fn which calculates average temperature for a location
-fn average_temperature(location: &weather::Location) -> i16 {
-    location.location_data.forecast.iter().map(|f| f.temperature).sum::<i16>() / location.location_data.forecast.len() as i16
-}

@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Utc, NaiveDateTime, LocalResult};
 use serde::{Deserialize, Serialize};
 use serde_xml_rs::{from_str};
 use std::time::Duration;
@@ -56,16 +56,52 @@ pub struct Forecast {
 
 static WEATHER_URL: &str = "https://ims.gov.il/sites/default/files/ims_data/xml_files/isr_cities_1week_6hr_forecast.xml";
 
-static duration: Duration = Duration::new(180, 0);
-pub fn get_israeli_weather_forecast() -> Result<LocationForecasts, serde_xml_rs::Error> {
-    let forecast_xml = ureq::get(WEATHER_URL)
-        .timeout(duration)
+static DURATION: Duration = Duration::new(180, 0);
+
+pub fn get_israeli_weather_forecast() -> Result<LocationForecasts, i8> {
+    let agent = ureq::AgentBuilder::new()
+        .timeout_connect(DURATION)
+        .timeout_read(DURATION)
+        .build();
+
+    let forecast_xml = agent.get(WEATHER_URL)
         .call()
         .expect("failed to fetch forecast")
         .into_string()
         .expect("invalid xml");
 
-    let forecasts: Result<LocationForecasts, serde_xml_rs::Error> = from_str(&forecast_xml).iter_mut().map(transform_forecast_times_to_datetimes).into();
+    let forecasts: Result<LocationForecasts, serde_xml_rs::Error> = from_str(&forecast_xml);
 
-    return forecasts;
+    if let Ok(mut forecasts) = forecasts {
+        transform_forecast_times_to_datetimes(&mut forecasts);
+        return Ok(forecasts);
+    } else {
+        return Err(0);
+    }
+}
+
+fn parse_time(time: &str) -> Result<DateTime<Utc>, LocalResult<i8>> {
+    let possible_time = NaiveDateTime::parse_from_str(time, "%Y-%m-%d %H:%M:%S").expect("failed to parse forecast time").and_local_timezone(Utc).latest();
+    if let Some(time) = possible_time {
+        return Ok(time);
+    } else {
+        return Err(LocalResult::None);
+    }
+}
+
+fn transform_forecast_times_to_datetimes(forecast: &mut LocationForecasts) {
+    forecast.location.iter_mut().for_each(|location| {
+        location.location_data.forecast.iter_mut().for_each(|forecast| {
+            forecast.forecast_time = parse_time(&forecast.forecast_time).expect("failed to parse forecast time").to_rfc3339();
+        });
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn parse_time() {
+        let time = "2023-01-31 02:00:00";
+        assert_eq!(super::parse_time(time).expect("failed to parse").to_rfc3339(), "2023-01-31T02:00:00+00:00");
+    }
 }
