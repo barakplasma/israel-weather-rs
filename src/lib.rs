@@ -1,8 +1,6 @@
 use chrono::{DateTime, Utc, NaiveDateTime, LocalResult};
 use serde::{Deserialize, Serialize};
 use serde_xml_rs::{from_str};
-use std::time::Duration;
-
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "PascalCase")]
@@ -56,19 +54,14 @@ pub struct Forecast {
 
 static WEATHER_URL: &str = "https://ims.gov.il/sites/default/files/ims_data/xml_files/isr_cities_1week_6hr_forecast.xml";
 
-static DURATION: Duration = Duration::new(180, 0);
-
 pub fn get_israeli_weather_forecast() -> Result<LocationForecasts, i8> {
-    let agent = ureq::AgentBuilder::new()
-        .timeout_connect(DURATION)
-        .timeout_read(DURATION)
-        .build();
+    use cached_path::cached_path;
 
-    let forecast_xml = agent.get(WEATHER_URL)
-        .call()
-        .expect("failed to fetch forecast")
-        .into_string()
-        .expect("invalid xml");
+    let path = cached_path(
+        WEATHER_URL
+    ).unwrap();
+
+    let forecast_xml = std::fs::read_to_string(path).expect("failed to read forecast xml");
 
     let forecasts: Result<LocationForecasts, serde_xml_rs::Error> = from_str(&forecast_xml);
 
