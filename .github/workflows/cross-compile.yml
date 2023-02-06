@@ -1,6 +1,7 @@
-name: cross-compile release
+name: Cross-Compile Release
 
 on:
+  workflow_dispatch:
   release:
     types: [created]
   
@@ -8,22 +9,14 @@ jobs:
   cross-compile:
     name: cross compile releases
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: ['aarch64-linux-android', 'aarch64-unknown-linux-musl', 'arm-unknown-linux-musleabi']
     steps:
     - uses: actions/checkout@v3
     - run: cargo install cross --git https://github.com/cross-rs/cross
-    - run: cross build --release --target aarch64-linux-android
-    - run: chmod -R a+xrw target/
+    - run: cross build --release --target ${{matrix.target}}
     - uses: actions/upload-artifact@v3
       with:
-        name: aarch64-linux-android_weather
-        path: target/aarch64-linux-android/release/weather
-    - run: cross build --release --target aarch64-unknown-linux-musl
-    - uses: actions/upload-artifact@v3
-      with:
-        name: aarch64-unknown-linux-musl_weather
-        path: target/aarch64-unknown-linux-musl/release/weather
-    - run: cross build --release --target arm-unknown-linux-musleabi
-    - uses: actions/upload-artifact@v3
-      with:
-        name: arm-unknown-linux-musleabi_weather
-        path: target/arm-unknown-linux-musleabi/release/weather
+        name: ${{matrix.target}}_weather
+        path: target/${{matrix.target}}/release/weather
