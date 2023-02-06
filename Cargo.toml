@@ -10,3 +10,4 @@ cached-path = "0.6.0"
 chrono = "0.4.23"
 serde = { version = "1.0.151", features = ["derive"]}
 serde-xml-rs = "0.6.0"
+openssl = { version = "*", features = ["vendored"] }
