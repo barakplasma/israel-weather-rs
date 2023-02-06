@@ -6,8 +6,13 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-cached-path = "0.6.0"
-chrono = "0.4.23"
-serde = { version = "1.0.151", features = ["derive"]}
-serde-xml-rs = "0.6.0"
+cached-path = "0.6"
+chrono = "0.4"
+serde = { version = "1.0", features = ["derive"]}
+serde-xml-rs = "0.6"
+
+[target.'cfg(target_arch = "aarch")'.dependencies]
+openssl = { version = "*", features = ["vendored"] }
+
+[target.'cfg(target_arch = "arm")'.dependencies]
 openssl = { version = "*", features = ["vendored"] }
