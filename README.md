@@ -57,3 +57,7 @@ I used https://llamalab.com/automate/ [Google Play Store link](https://play.goog
 I use the [termux/termux-tasker](https://github.com/termux/termux-tasker) [plugin in llamalabs automate](https://llamalab.com/automate/doc/block/plugin_setting.html) to run the latest Android release on a schedule, and to use the Speak and Notifications blocks of Automate.
 
 The [flow file](./barakplasma_israel-weather-rs.flo) can be imported in the Automate app after you setup termux-tasker with it's permissions.
+
+![flow-preview](./barakplasma-israel-weather-rs.png)
+
+![notification-example](./Screenshot_2023-03-01-16-50-49-219_com.llamalab.automate.jpg)
