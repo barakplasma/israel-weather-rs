@@ -6,10 +6,10 @@ use clap::Parser;
 /// Downloads and Caches Israeli weather forecast from https://ims.gov.il and prints the next forecast for a location as json
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
-struct Args {
+struct Args<'a> {
     /// Location to check weather for
     #[arg(short, default_value_t="Tel Aviv - Yafo", long)]
-    location: &str,
+    location: &'a str,
 
     /// Check next n hours ahead
     #[arg(short, long, default_value_t = 6)]
