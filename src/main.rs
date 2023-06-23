@@ -8,7 +8,7 @@ use clap::Parser;
 #[command(author, version, about, long_about = None)]
 struct Args {
     /// Location to check weather for
-    #[arg(short, long, default_value_t = "Tel Aviv - Yafo".to_string())]
+    #[arg(short, default_value_t="Tel Aviv - Yafo".to_string(), long)]
     location: String,
 
     /// Check next n hours ahead
