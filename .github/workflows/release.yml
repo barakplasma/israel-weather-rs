@@ -18,8 +18,18 @@ jobs:
       - run: npm install -g shx
       - name: Build
         run: cargo build --release 
-      - run: shx cp target/release/weather target/release/weather_${{matrix.os}}
-      - name: Release
+      - run: shx ls -R
+      - run: shx cp ./target/release/weather ./target/release/weather_${{matrix.os}}
+        if: runner.os != "Windows"
+      - run: shx cp target\release\weather target\release\weather_${{matrix.os}}
+        if: runner.os == "Windows"
+      - name: Release Linux
+        if: runner.os != "Windows"
         uses: softprops/action-gh-release@v1
         with:
-          files: weather_${{matrix.os}}
+          files: ./target/release/weather_${{matrix.os}}
+      - name: Release Windows
+        if: runner.os == "Windows"
+        uses: softprops/action-gh-release@v1
+        with:
+          files: target\release\weather_${{matrix.os}}
