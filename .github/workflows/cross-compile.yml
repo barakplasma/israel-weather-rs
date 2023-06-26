@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        target: ['aarch64-linux-android', 'aarch64-unknown-linux-musl', 'arm-unknown-linux-musleabi', 'armv7-unknown-linux-gnueabihf']
+        target: ['aarch64-linux-android', 'aarch64-unknown-linux-musl', 'arm-unknown-linux-musleabi', 'armv7-unknown-linux-gnueabihf', 'x86_64-pc-windows-gnu', 'x86_64-unknown-linux-musl', 'x86_64-apple-darwin']
     steps:
     - uses: actions/checkout@v3
     - run: cargo install cross --git https://github.com/cross-rs/cross
