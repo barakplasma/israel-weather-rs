@@ -28,4 +28,4 @@ jobs:
     - uses: actions/upload-artifact@v3
       with:
         name: weather_${{matrix.target}}
-        path: target/${{matrix.target}}/release/weather
+        path: target/${{matrix.target}}/release/weather_${{matrix.target}}
