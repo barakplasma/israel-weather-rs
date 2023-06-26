@@ -6,17 +6,15 @@ on:
     types: [created]
   
 jobs:
-  cross-compile:
-    name: cross compile releases
+  aarch64-linux-android:
+    name: cross compile for aarch64-linux-android
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        target: ['aarch64-linux-android', 'aarch64-unknown-linux-musl', 'arm-unknown-linux-musleabi', 'armv7-unknown-linux-gnueabihf', 'x86_64-pc-windows-gnu', 'x86_64-unknown-linux-musl', 'x86_64-apple-darwin']
+    container: ghcr.io/cross-rs/aarch64-linux-android
+# 'aarch64-unknown-linux-musl', 'arm-unknown-linux-musleabi', 'armv7-unknown-linux-gnueabihf', 'x86_64-pc-windows-gnu', 'x86_64-unknown-linux-musl']
     steps:
     - uses: actions/checkout@v3
-    - run: cargo install cross --git https://github.com/cross-rs/cross
-    - run: cross build --release --target ${{matrix.target}}
+    - run: cross build --release --target aarch64-linux-android
     - uses: actions/upload-artifact@v3
       with:
-        name: ${{matrix.target}}_weather
-        path: target/${{matrix.target}}/release/weather
+        name: aarch64-linux-android_weather
+        path: target/aarch64-linux-android/release/weather
