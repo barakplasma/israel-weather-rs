@@ -20,11 +20,12 @@ jobs:
     - run: curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
     - run: cargo binstall cross --no-confirm --version 0.2.5
     - run: cross build --release --target ${{matrix.target}}
+    - run: mv target/${{matrix.target}}/release/weather target/${{matrix.target}}/release/weather_${{matrix.target}}
     - name: Release
       uses: softprops/action-gh-release@v1
       with:
-        files: target/${{matrix.target}}/release/weather
+        files: target/${{matrix.target}}/release/weather_${{matrix.target}}
     - uses: actions/upload-artifact@v3
       with:
-        name: ${{matrix.target}}_weather
+        name: weather_${{matrix.target}}
         path: target/${{matrix.target}}/release/weather
