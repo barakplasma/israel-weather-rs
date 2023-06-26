@@ -1,4 +1,4 @@
-name: Rust
+name: Test
 
 on:
   push:
@@ -7,14 +7,9 @@ on:
     branches: [ "master" ]
   workflow_dispatch:
 
-env:
-  CARGO_TERM_COLOR: always
-
 jobs:
-  build:
-
+  test:
     runs-on: ubuntu-latest
-
     steps:
     - uses: actions/checkout@v3
     - uses: Swatinem/rust-cache@v2
