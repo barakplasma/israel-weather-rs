@@ -13,6 +13,5 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     - uses: Swatinem/rust-cache@v2
-    - name: Run tests
-      run: cargo test
-    - run: cargo run
+    - run: cargo test
+    - run: target/dev/weather
