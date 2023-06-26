@@ -5,6 +5,7 @@ on:
     branches: [ "master" ]
   pull_request:
     branches: [ "master" ]
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
@@ -20,3 +21,25 @@ jobs:
       run: cargo build --verbose
     - name: Run tests
       run: cargo test --verbose
+  cross:
+      name: Rust ${{matrix.target}}
+      runs-on: ubuntu-latest
+      strategy:
+        fail-fast: false
+        matrix:
+          target:
+            - aarch64-unknown-linux-gnu
+            - arm-unknown-linux-gnueabi
+            - aarch64-linux-android
+      steps:
+        - uses: actions/checkout@v2
+        - uses: actions-rs/toolchain@v1
+          with:
+            toolchain: stable
+            target: ${{matrix.target}}
+            override: true
+        - uses: actions-rs/cargo@v1
+          with:
+            use-cross: true
+            command: test
+            args: --target ${{matrix.target}}
