@@ -15,9 +15,10 @@ jobs:
     steps:
       - uses: actions/checkout@master
       - uses: Swatinem/rust-cache@v2
+      - run: npm install -g shx
       - name: Build
         run: cargo build --release 
-      - run: find . -type f -executable -name "weather" -exec mv {} ./weather_${{matrix.os}} \;
+      - run: shx cp target/release/weather target/release/weather_${{matrix.os}}
       - name: Release
         uses: softprops/action-gh-release@v1
         with:
