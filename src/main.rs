@@ -1,3 +1,4 @@
+#![allow(unused_parens)]
 use serde_json;
 use weather::get_israeli_weather_forecast;
 
@@ -8,7 +9,7 @@ use clap::Parser;
 #[command(author, version, about, long_about = None)]
 struct Args {
     /// Location to check weather for
-    #[arg(short, default_value_t=("Tel Aviv - Yafo".to_string()), long)]
+    #[arg(short, long, default_value_t=("Tel Aviv - Yafo".to_string()))]
     location: String,
 
     /// Check next n hours ahead
