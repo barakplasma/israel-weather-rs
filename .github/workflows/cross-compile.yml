@@ -15,7 +15,7 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     - run: curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
-    - run: cargo binstall cross
+    - run: cargo binstall cross --version v0.2.5
     - run: cross build --release --target ${{matrix.target}}
     - uses: actions/upload-artifact@v3
       with:
