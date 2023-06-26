@@ -1,9 +1,9 @@
 name: Release - Desktop OS
 
 on:
-  workflow_dispatch:
   release:
     types: [created]
+  workflow_dispatch:
 
 jobs:
   release:
