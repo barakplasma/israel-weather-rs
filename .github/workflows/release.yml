@@ -16,9 +16,9 @@ jobs:
       - uses: actions/checkout@master
       - uses: Swatinem/rust-cache@v2
       - name: Build
-        run: cargo build --release --target-dir binaries
-      - run: mv binaries/weather binaries/weather_${{matrix.os}}
+        run: cargo build --release 
+      - run: find . -type f -executable -name "weather" -exec mv {} ./weather_${{matrix.os}} \;
       - name: Release
         uses: softprops/action-gh-release@v1
         with:
-          files: binaries/weather_${{matrix.os}}
+          files: weather_${{matrix.os}}
