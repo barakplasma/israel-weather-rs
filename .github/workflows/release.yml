@@ -30,7 +30,7 @@ jobs:
         with:
           files: ./target/release/weather_${{matrix.os}}
       - name: Release Windows
-        if: runner.os == 'Windows"
+        if: runner.os == 'Windows'
         uses: softprops/action-gh-release@v1
         with:
           files: target\release\weather_${{matrix.os}}
