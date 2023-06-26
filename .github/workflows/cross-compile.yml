@@ -23,6 +23,7 @@ jobs:
       uses: ScribeMD/docker-cache@0.3.3
       with:
         key: docker-${{matrix.target}}
+    - run: docker pull ghcr.io/cross-rs/${{matrix.target}}:0.2.5
     - run: cross build --release --target ${{matrix.target}}
     - run: mv target/${{matrix.target}}/release/weather target/${{matrix.target}}/release/weather_${{matrix.target}}
     - name: Release
