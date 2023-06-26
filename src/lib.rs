@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc, NaiveDateTime, LocalResult};
 use serde::{Deserialize, Serialize};
 use serde_xml_rs::{from_str};
+use cached_path::Cache;
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "PascalCase")]
@@ -56,11 +57,17 @@ pub struct Forecast {
 static WEATHER_URL: &str = "https://ims.gov.il/sites/default/files/ims_data/xml_files/isr_cities_1week_6hr_forecast.xml";
 
 pub fn get_israeli_weather_forecast() -> Result<LocationForecasts, i8> {
-    use cached_path::cached_path;
+    
 
-    let path = cached_path(
+let cache = Cache::builder()
+    .dir(std::env::temp_dir().join("weather/"))
+    .connect_timeout(std::time::Duration::from_secs(60))
+    .build().unwrap();
+let path = cache.cached_path(
         WEATHER_URL
     ).unwrap();
+
+    assert!(path.is_file());
 
     let forecast_xml = std::fs::read_to_string(path).expect("failed to read forecast xml");
 
