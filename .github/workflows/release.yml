@@ -18,11 +18,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: npm install -g shx
       - name: Build
-        run: cargo build --release 
-      - run: shx ls -R
+        run: cargo build --release
       - run: shx cp ./target/release/weather ./target/release/weather_${{matrix.os}}
         if: runner.os == 'Linux' || runner.os == 'macOS'
-      - run: shx cp target\release\weather target\release\weather_${{matrix.os}}
+      - run: shx cp target/release/weather.exe target/release/weather_windows-latest.exe
         if: runner.os == 'Windows'
       - name: Release Linux
         if: runner.os == 'Linux' || runner.os == 'macOS'
@@ -33,4 +32,4 @@ jobs:
         if: runner.os == 'Windows'
         uses: softprops/action-gh-release@v1
         with:
-          files: target\release\weather_${{matrix.os}}
+          files: target\release\weather_windows-latest.exe
