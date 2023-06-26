@@ -1,0 +1,13 @@
+name: Test
+
+on:
+  schedule:
+  - cron: "0 9/6 * * *"
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - uses: Swatinem/rust-cache@v2
+    - run: cargo run
