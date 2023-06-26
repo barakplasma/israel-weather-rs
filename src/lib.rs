@@ -62,7 +62,9 @@ pub fn get_israeli_weather_forecast() -> Result<LocationForecasts, i8> {
 let cache = Cache::builder()
     .dir(std::env::temp_dir().join("weather/"))
     .connect_timeout(std::time::Duration::from_secs(60))
-    .build().unwrap();
+    .timeout(std::time::Duration::from_secs(60))
+    .build()
+    .unwrap();
 let path = cache.cached_path(
         WEATHER_URL
     ).unwrap();
