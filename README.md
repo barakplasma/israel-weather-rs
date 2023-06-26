@@ -1,4 +1,6 @@
 # israel-weather-rs
+[![Periodic Test of IMS data](https://github.com/barakplasma/israel-weather-rs/actions/workflows/periodic_test.yml/badge.svg)](https://github.com/barakplasma/israel-weather-rs/actions/workflows/periodic_test.yml)
+
 gets weather forecast xml from ims.gov.il and parses it into rust structs
 
 Runs on my android phone to alert me when it's likely to rain in the next 6 hours via an integration with https://llamalab.com/automate/. Could also be setup to alert you or run on linux/mac/windows/raspberry pi with another notification wrapper like https://github.com/nikoksr/notify or https://github.com/caronc/apprise
