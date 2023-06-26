@@ -1,4 +1,4 @@
-name: Release
+name: Release - Desktop OS
 
 on:
   release:
@@ -14,9 +14,10 @@ jobs:
         target: [x86_64-pc-windows-gnu, x86_64-unknown-linux-musl, x86_64-apple-darwin]
     steps:
       - uses: actions/checkout@master
-      - name: Compile and release
-        uses: rust-build/rust-build.action@v1.4.3
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
+      - name: Release
+        uses: softprops/action-gh-release@v1
         with:
-          RUSTTARGET: ${{ matrix.target }}
+          files: target/${{matrix.target}}/release/weather
