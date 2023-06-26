@@ -3,8 +3,8 @@ name: Cross-Compile
 on:
   workflow_dispatch:
   push:
-    tags:
-      - .*
+    branches:
+      - master
   
 jobs:
   cross-compile:
