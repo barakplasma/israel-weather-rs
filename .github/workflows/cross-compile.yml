@@ -19,6 +19,10 @@ jobs:
         override: true
     - run: curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
     - run: cargo binstall cross --no-confirm --version 0.2.5
+    - name: Cache Docker images.
+      uses: ScribeMD/docker-cache@0.3.3
+      with:
+        key: docker-${{matrix.target}}
     - run: cross build --release --target ${{matrix.target}}
     - run: mv target/${{matrix.target}}/release/weather target/${{matrix.target}}/release/weather_${{matrix.target}}
     - name: Release
