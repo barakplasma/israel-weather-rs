@@ -15,6 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@master
       - uses: Swatinem/rust-cache@v2
+      - run: rustup target add ${{ matrix.target }}
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
       - run: mv target/${{matrix.target}}/release/weather target/${{matrix.target}}/release/weather_${{matrix.target}}
