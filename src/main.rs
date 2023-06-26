@@ -3,7 +3,7 @@ use weather::get_israeli_weather_forecast;
 
 use clap::Parser;
 
-const DEFAULT_LOCATION: String = "Tel Aviv - Yafo".to_string();
+static DEFAULT_LOCATION: String = "Tel Aviv - Yafo".to_string();
 
 /// Downloads and Caches Israeli weather forecast from https://ims.gov.il and prints the next forecast for a location as json
 #[derive(Parser, Debug)]
