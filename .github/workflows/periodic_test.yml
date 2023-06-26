@@ -1,4 +1,4 @@
-name: Test
+name: Periodic Test of IMS data
 
 on:
   schedule:
