@@ -32,4 +32,4 @@ jobs:
         if: runner.os == 'Windows'
         uses: softprops/action-gh-release@v1
         with:
-          files: target\release\weather_windows-latest.exe
+          files: target/release/weather_windows-latest.exe
