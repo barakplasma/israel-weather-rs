@@ -6,6 +6,7 @@ on:
   
 jobs:
   cross-compile:
+    if: startsWith(github.ref, 'refs/tags/')
     name: cross compile
     runs-on: ubuntu-latest
     strategy:
