@@ -22,23 +22,23 @@ Options:
 ```json
 [
   {
-    "DewPointTemp": 5,
-    "FeelsLike": 15,
-    "ForecastTime": "2023-02-12T14:00:00+00:00",
-    "HeatStress": 12,
-    "HeatStressLevel": 0,
-    "MaxTemp": 15,
-    "MinTemp": 12,
-    "Rain": 0.25,
-    "RelativeHumidity": 54,
-    "Temperature": 15,
+    "DewPointTemp": 21.0,
+    "FeelsLike": 25.799999237060547,
+    "ForecastTime": "2023-06-26T21:00:00+00:00",
+    "HeatStress": 23.899999618530273,
+    "HeatStressLevel": 1.0,
+    "MaxTemp": 28.0,
+    "MinTemp": 26.0,
+    "Rain": 0.0,
+    "RelativeHumidity": 73.0,
+    "Temperature": 25.799999237060547,
     "UvIndex": null,
     "UvIndexMax": null,
-    "WeatherCode": 1530,
-    "WeatherCodeEnglish": "Partly cloudy possible rain",
-    "WindChill": 14,
-    "WindDirection": 113,
-    "WindSpeed": 13
+    "WeatherCode": 1220,
+    "WeatherCodeEnglish": "Partly cloudy",
+    "WindChill": 28.0,
+    "WindDirection": 270.0,
+    "WindSpeed": 5.0
   }
 ]
 ```
