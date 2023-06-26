@@ -4,17 +4,49 @@ on:
   workflow_dispatch:
   release:
     types: [created]
-  
+
 jobs:
-  aarch64-linux-android:
-    name: cross compile for aarch64-linux-android
-    runs-on: ubuntu-latest
-    container: ghcr.io/cross-rs/aarch64-linux-android
-# 'aarch64-unknown-linux-musl', 'arm-unknown-linux-musleabi', 'armv7-unknown-linux-gnueabihf', 'x86_64-pc-windows-gnu', 'x86_64-unknown-linux-musl']
+  release:
+    name: Release - ${{ matrix.platform.release_for }}
+    strategy:
+      matrix:
+        platform:
+          - release_for: Android
+            os: ubuntu-20.04
+            target: aarch64-linux-android
+            bin: weather
+            name: weather_aarch64-linux-android.tar.gz
+            command: build
+
+          - release_for: Windows-x86_64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            bin: weather.exe
+            name: weather-Windows-x86_64.zip
+            command: both
+
+          - release_for: macOS-x86_64
+            os: macOS-latest
+            target: x86_64-apple-darwin
+            bin: weather
+            name: weather-Darwin-x86_64.tar.gz
+            command: both
+
+          - release_for: Linux
+            os: ubuntu-20.04
+            target: x86_64-unknown-linux-musl
+            bin: weather
+            name: weather_x86_64-unknown-linux-musl.tar.gz
+            command: build
+         
+    runs-on: ${{ matrix.platform.os }}
     steps:
-    - uses: actions/checkout@v3
-    - run: cross build --release --target aarch64-linux-android
-    - uses: actions/upload-artifact@v3
-      with:
-        name: aarch64-linux-android_weather
-        path: target/aarch64-linux-android/release/weather
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Build binary
+        uses: houseabsolute/actions-rust-cross@v0
+        with:
+          command: ${{ matrix.platform.command }}
+          target: ${{ matrix.platform.target }}
+          args: "--locked --release"
+          strip: true
