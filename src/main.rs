@@ -3,14 +3,12 @@ use weather::get_israeli_weather_forecast;
 
 use clap::Parser;
 
-static DEFAULT_LOCATION: String = "Tel Aviv - Yafo".to_string();
-
 /// Downloads and Caches Israeli weather forecast from https://ims.gov.il and prints the next forecast for a location as json
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
     /// Location to check weather for
-    #[arg(short, default_value_t=DEFAULT_LOCATION, long)]
+    #[arg(short, default_value_t=("Tel Aviv - Yafo".to_string()), long)]
     location: String,
 
     /// Check next n hours ahead
