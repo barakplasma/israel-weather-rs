@@ -1,6 +1,7 @@
 name: Release - Desktop OS
 
 on:
+  workflow_dispatch:
   release:
     types: [created]
 
