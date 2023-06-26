@@ -11,15 +11,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [x86_64-pc-windows-gnu, x86_64-unknown-linux-musl, x86_64-apple-darwin]
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@master
       - uses: Swatinem/rust-cache@v2
-      - run: rustup target add ${{ matrix.target }}
       - name: Build
-        run: cargo build --release --target ${{ matrix.target }}
-      - run: mv target/${{matrix.target}}/release/weather target/${{matrix.target}}/release/weather_${{matrix.target}}
+        run: cargo build --release --target-dir binaries
+      - run: mv binaries/weather binaries/weather_${{matrix.os}}
       - name: Release
         uses: softprops/action-gh-release@v1
         with:
-          files: target/${{matrix.target}}/release/weather_${{matrix.target}}
+          files: binaries/weather_${{matrix.os}}
