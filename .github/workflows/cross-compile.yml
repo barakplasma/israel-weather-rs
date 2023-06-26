@@ -1,21 +1,32 @@
-name: Cross-Compile Release
+name: Cross-Compile
 
 on:
   workflow_dispatch:
-  release:
-    types: [created]
+  push:
+    tags:
+      - .*
   
 jobs:
   cross-compile:
-    name: cross compile releases
+    name: cross compile
     runs-on: ubuntu-latest
     strategy:
       matrix:
         target: ['aarch64-linux-android', 'aarch64-unknown-linux-musl', 'arm-unknown-linux-musleabi', 'armv7-unknown-linux-gnueabihf']
     steps:
     - uses: actions/checkout@v3
-    - run: cargo install cross --git https://github.com/cross-rs/cross
+    - uses: actions-rs/toolchain@v1
+      with:
+        toolchain: 1.67.0
+        override: true
+    - run: curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
+    - run: cargo binstall cross --no-confirm --version 0.2.5
     - run: cross build --release --target ${{matrix.target}}
+    - name: Release
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v1
+      with:
+        files: target/${{matrix.target}}/release/weather
     - uses: actions/upload-artifact@v3
       with:
         name: ${{matrix.target}}_weather
