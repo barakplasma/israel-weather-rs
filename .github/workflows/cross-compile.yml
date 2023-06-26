@@ -1,7 +1,6 @@
 name: Cross-Compile
 
 on:
-  workflow_dispatch:
   push:
   
 jobs:
@@ -22,7 +21,6 @@ jobs:
     - run: cargo binstall cross --no-confirm --version 0.2.5
     - run: cross build --release --target ${{matrix.target}}
     - name: Release
-      if: startsWith(github.ref, 'refs/tags/')
       uses: softprops/action-gh-release@v1
       with:
         files: target/${{matrix.target}}/release/weather
