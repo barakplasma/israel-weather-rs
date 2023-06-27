@@ -1,6 +1,5 @@
 # israel-weather-rs
 [![E2E test every 6 hours](https://github.com/barakplasma/israel-weather-rs/actions/workflows/e2e_test.yml/badge.svg)](https://github.com/barakplasma/israel-weather-rs/actions/workflows/e2e_test.yml)
-[![Release - Desktop OS](https://github.com/barakplasma/israel-weather-rs/actions/workflows/release.yml/badge.svg)](https://github.com/barakplasma/israel-weather-rs/actions/workflows/release.yml)
 [![Cross-Compile](https://github.com/barakplasma/israel-weather-rs/actions/workflows/cross-compile.yml/badge.svg)](https://github.com/barakplasma/israel-weather-rs/actions/workflows/cross-compile.yml)
 [![Test](https://github.com/barakplasma/israel-weather-rs/actions/workflows/test.yml/badge.svg)](https://github.com/barakplasma/israel-weather-rs/actions/workflows/test.yml)
 
