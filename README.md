@@ -51,12 +51,14 @@ Options:
 ```
 
 ## Installation
-Download from the latest release, or if you need rpi/android from the most recently built cross-compile action
+Download from the latest release, or git clone and run cargo install
 
 ## Get Started with Dev
 1. Get rust via rustup
 1. cargo run
 1. profit
+
+Also check out the github action. im proud of the CI there.
 
 ## Running on Android: with help from llamalab automate
 I used https://llamalab.com/automate/ [Google Play Store link](https://play.google.com/store/apps/details?id=com.llamalab.automate&referrer=utm_source%3Dhomepage) to run the Android build of this on my android phone on a schedule in order to notify me of expected upcoming rain even when my phone is offline.
