@@ -8,5 +8,5 @@ jobs:
   run:
     runs-on: ubuntu-latest
     steps:
-    - runs: curl -s https://api.github.com/repos/barakplasma/israel-weather-rs/releases/latest | grep "browser_download_url.*ubuntu" | cut -d : -f 2,3 | tr -d \" | wget -qi -
-    - runs: ./weather_ubuntu-latest
+    - run: curl -s https://api.github.com/repos/barakplasma/israel-weather-rs/releases/latest | grep "browser_download_url.*ubuntu" | cut -d ":" -f 2,3 | tr -d \" | wget -qi -
+    - run: ./weather_ubuntu-latest
