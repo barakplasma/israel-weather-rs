@@ -9,6 +9,6 @@ jobs:
   run:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
-    - uses: Swatinem/rust-cache@v2
-    - run: cargo run
+    - run: curl -s https://api.github.com/repos/barakplasma/israel-weather-rs/releases/latest | grep "browser_download_url.*ubuntu" | cut -d ":" -f 2,3 | tr -d \" | wget -qi -
+    - run: chmod +x ./weather_ubuntu-latest
+    - run: ./weather_ubuntu-latest
