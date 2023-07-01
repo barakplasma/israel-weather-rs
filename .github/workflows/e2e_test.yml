@@ -3,6 +3,7 @@ name: E2E test every 6 hours
 on:
   schedule:
   - cron: "0 6/6 * * *"
+  workflow_dispatch:
 
 jobs:
   run:
