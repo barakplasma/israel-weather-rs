@@ -7,11 +7,12 @@ mod ims_structs;
 static WEATHER_URL: &str =
     "https://ims.gov.il/sites/default/files/ims_data/xml_files/isr_cities_1week_6hr_forecast.xml";
 
-pub fn get_israeli_weather_forecast() -> Result<ims_structs::LocationForecasts, serde_xml_rs::Error> {
+pub fn get_israeli_weather_forecast(offline: bool) -> Result<ims_structs::LocationForecasts, serde_xml_rs::Error> {
     let cache = Cache::builder()
         .dir(std::env::temp_dir().join("weather/"))
         .connect_timeout(std::time::Duration::from_secs(60))
         .timeout(std::time::Duration::from_secs(60))
+        .offline(offline)
         .build()
         .expect("unable to start download cache");
 

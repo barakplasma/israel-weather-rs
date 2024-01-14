@@ -19,12 +19,16 @@ struct Args {
     /// Ignore location and print all weather data
     #[arg(short, long, default_value_t = false)]
     all: bool,
+
+    /// Offline mode
+    #[arg(short, long, default_value_t = false)]
+    offline: bool,
 }
 
 fn main() {
     let args = Args::parse();
 
-    let forecasts = get_israeli_weather_forecast().expect("failed to get forecast");
+    let forecasts = get_israeli_weather_forecast(args.offline).expect("failed to get forecast");
 
     let now = chrono::Utc::now();
 
