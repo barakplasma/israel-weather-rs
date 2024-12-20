@@ -9,7 +9,7 @@ use clap::Parser;
 #[command(author, version, about, long_about = None)]
 struct Args {
     /// Location to check weather for
-    #[arg(short, long, default_value_t=("Tel Aviv - Yafo".to_string()))]
+    #[arg(short, long, default_value_t=("Tel Aviv Coast".to_string()))]
     location: String,
 
     /// Check next n hours ahead
@@ -48,7 +48,7 @@ fn main() {
         .location
         .iter()
         .find(|location| location.location_meta_data.location_name_eng == args.location)
-        .expect("failed to find location");
+        .expect("failed to find location specified");
     let mut forecast_iter = desired_location.location_data.forecast.iter();
     forecast_iter
         .position(|forecast| {
