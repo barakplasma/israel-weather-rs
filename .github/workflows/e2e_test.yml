@@ -16,5 +16,11 @@ jobs:
       - name: Make executable
         run: chmod +x ./weather_ubuntu-latest
 
-      - name: Run E2E test
+      - name: Run E2E test - Tel Aviv
         run: ./weather_ubuntu-latest
+
+      - name: Run E2E test - All
+        run: ./weather_ubuntu-latest --all
+
+      - name: Run E2E test - Offline
+        run: ./weather_ubuntu-latest --offline
