@@ -9,6 +9,6 @@ jobs:
   run:
     runs-on: ubuntu-latest
     steps:
-    - run: curl -s https://api.github.com/repos/barakplasma/israel-weather-rs/releases/latest | grep "browser_download_url.*ubuntu" | cut -d ":" -f 2,3 | tr -d \" | wget -qi -
+    - run: curl -s "https://api.github.com/repos/barakplasma/israel-weather-rs/releases/latest" | jq -r '.assets[] | select(.browser_download_url | contains("ubuntu")) | .browser_download_url' | xargs curl -LO
     - run: chmod +x ./weather_ubuntu-latest
     - run: ./weather_ubuntu-latest
