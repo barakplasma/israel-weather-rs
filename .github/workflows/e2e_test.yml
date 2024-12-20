@@ -8,21 +8,10 @@ on:
 jobs:
   run:
     runs-on: ubuntu-latest
-    env:
-      GH_TOKEN: ${{ github.token }} # Set the GH_TOKEN env variable
 
     steps:
-      - name: Get latest release asset id
-        id: get_asset_id
-        run: |
-          ASSET_ID=$(gh api repos/barakplasma/israel-weather-rs/releases/latest \
-            | jq -r '.assets[] | select(.name | contains("ubuntu")) | .id' \
-            )
-          echo "asset_id=$ASSET_ID" >> $GITHUB_OUTPUT
-      
-      - name: Download Release Asset
-        run: |
-            gh release download --repo barakplasma/israel-weather-rs "${{ steps.get_asset_id.outputs.asset_id }}"
+      - name: Get latest release asset
+        run: curl -s "https://api.github.com/repos/barakplasma/israel-weather-rs/releases/latest" | jq -r '.assets[] | select(.browser_download_url | contains("ubuntu")) | .browser_download_url' | xargs curl -LO
 
       - name: Make executable
         run: chmod +x ./weather_ubuntu-latest
