@@ -22,7 +22,7 @@ jobs:
       
       - name: Download Release Asset
         run: |
-            gh release asset download --repo barakplasma/israel-weather-rs "${{ steps.get_asset_id.outputs.asset_id }}"
+            gh release download --repo barakplasma/israel-weather-rs "${{ steps.get_asset_id.outputs.asset_id }}"
 
       - name: Make executable
         run: chmod +x ./weather_ubuntu-latest
