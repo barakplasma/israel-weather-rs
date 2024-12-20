@@ -2,13 +2,30 @@ name: E2E test every 6 hours
 
 on:
   schedule:
-  - cron: "1 6/6 * * *"
+    - cron: "1 6/6 * * *"
   workflow_dispatch:
 
 jobs:
   run:
     runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }} # Set the GH_TOKEN env variable
+
     steps:
-    - run: gh api repos/barakplasma/israel-weather-rs/releases/latest | jq -r '.assets[] | select(.name | contains("ubuntu")) | .id | first' | gh release asset download --repo barakplasma/israel-weather-rs $(cat) --clobber
-    - run: chmod +x ./weather_ubuntu-latest
-    - run: ./weather_ubuntu-latest
+      - name: Get latest release asset id
+        id: get_asset_id
+        run: |
+          ASSET_ID=$(gh api repos/barakplasma/israel-weather-rs/releases/latest \
+            | jq -r '.assets[] | select(.name | contains("ubuntu")) | .id' \
+            )
+          echo "asset_id=$ASSET_ID" >> $GITHUB_OUTPUT
+      
+      - name: Download Release Asset
+        run: |
+            gh release asset download --repo barakplasma/israel-weather-rs "${{ steps.get_asset_id.outputs.asset_id }}"
+
+      - name: Make executable
+        run: chmod +x ./weather_ubuntu-latest
+
+      - name: Run E2E test
+        run: ./weather_ubuntu-latest
