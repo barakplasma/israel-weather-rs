@@ -1,6 +1,8 @@
 #![allow(unused_parens)]
+use israel_weather_rs::get_israeli_weather_forecast;
 use serde_json;
-use weather::get_israeli_weather_forecast;
+use tracing::debug;
+use tracing_subscriber;
 
 use clap::Parser;
 
@@ -26,45 +28,47 @@ struct Args {
 }
 
 fn main() {
+    let format = tracing_subscriber::fmt::format().pretty();
+
+    tracing_subscriber::fmt().event_format(format).init();
+
     let args = Args::parse();
 
-    let forecasts = get_israeli_weather_forecast(args.offline).expect("failed to get forecast");
+    let weather_data = get_israeli_weather_forecast(args.offline).expect("failed to get forecast");
 
     let now = chrono::Utc::now();
 
     if args.all {
-        let json = serde_json::json!(forecasts);
-        // pretty print as json
+        let json = serde_json::json!(weather_data);
+        debug!("{}", &json);
         println!(
             "{}",
-            serde_json::to_string_pretty(&json)
-                .expect("failed to serialize weather forecast to json")
+            serde_json::to_string_pretty(&json).expect("could not pretty print json")
         );
         return;
     }
 
     // get desired location and next forecast
-    let desired_location = forecasts
+    let desired_location = weather_data
         .location
         .iter()
         .find(|location| location.location_meta_data.location_name_eng == args.location)
         .expect("failed to find location specified");
-    let mut forecast_iter = desired_location.location_data.forecast.iter();
-    forecast_iter
-        .position(|forecast| {
+
+    let next_forecasts: Vec<_> = desired_location.location_data.forecast
+        .iter()
+        .filter(|forecast| {
             chrono::DateTime::parse_from_rfc3339(&forecast.forecast_time)
                 .expect("failed to parse forecast datetime")
-                > now.checked_sub_signed(chrono::Duration::minutes(5*60+59))
-                    .expect("failed to subtract 5 hours and 59 minutes from now to reset to next forecast")
+                > now
         })
-        .expect("failed to find next forecast");
-
-    let json = serde_json::json!(forecast_iter
         .take((args.next / 6) as usize)
-        .collect::<Vec<_>>());
-    // pretty print as json
-    println!(
-        "{}",
-        serde_json::to_string_pretty(&json).expect("failed to serialize weather forecast to json")
-    );
+        .collect();
+
+    debug!("{:?}", next_forecasts);
+
+    let forecast_json =
+        serde_json::to_string_pretty(&next_forecasts).expect("could not pretty print json");
+
+    println!("{}", forecast_json);
 }

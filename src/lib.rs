@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use log::{trace, warn};
+use tracing::{error, instrument, trace, warn};
 
 use cached_path::Cache;
 use chrono::{DateTime, LocalResult, NaiveDateTime, Utc};
@@ -10,8 +10,10 @@ mod ims_structs;
 static WEATHER_URL: &str =
     "https://ims.gov.il/sites/default/files/ims_data/xml_files/isr_cities_1week_6hr_forecast.xml";
 
+#[instrument]
 fn make_cache(offline: bool) -> PathBuf {
     trace!("build cache {}", offline);
+
     let cache = Cache::builder()
         .dir(std::env::temp_dir().join("weather/"))
         .connect_timeout(std::time::Duration::from_secs(60))
@@ -22,7 +24,7 @@ fn make_cache(offline: bool) -> PathBuf {
 
     let result = cache.cached_path(WEATHER_URL);
 
-    if result.is_err() {
+    if result.is_err() && !offline {
         trace!("cache error");
         warn!("{}", result.unwrap_err());
         return make_cache(true);
@@ -31,6 +33,7 @@ fn make_cache(offline: bool) -> PathBuf {
     return result.expect("cache creation failed");
 }
 
+#[instrument]
 pub fn get_israeli_weather_forecast(
     offline: bool,
 ) -> Result<ims_structs::LocationForecasts, serde_xml_rs::Error> {
@@ -44,10 +47,15 @@ pub fn get_israeli_weather_forecast(
         from_str(&forecast_xml);
 
     if let Ok(mut forecasts) = forecasts {
+        trace!("forecast parsed successfully");
         transform_forecast_times_to_datetimes(&mut forecasts);
         transform_weather_code_to_english(&mut forecasts);
         return Ok(forecasts);
     } else if let Err(forecasts) = forecasts {
+        trace!(
+            "forecast not parsed successfully: {}",
+            forecasts.to_string()
+        );
         notify_error(&forecasts, &forecast_xml);
         return Err(forecasts);
     } else {
@@ -56,15 +64,16 @@ pub fn get_israeli_weather_forecast(
 }
 
 fn notify_error(e: &serde_xml_rs::Error, xml: &String) {
-    eprintln!("failed to parse xml because: {:?}", e);
+    error!("failed to parse xml because: {:?}", e);
     let head_of_xml = xml.lines().take(50);
-    eprintln!("head of xml is:");
+    error!("head of xml is:");
     for line in head_of_xml {
-        eprintln!("{}", line);
+        error!("{}", line);
     }
-    eprintln!("...");
+    error!("...");
 }
 
+#[instrument]
 fn parse_time(time: &str) -> Result<DateTime<Utc>, LocalResult<i8>> {
     let possible_time = NaiveDateTime::parse_from_str(time, "%Y-%m-%d %H:%M:%S")
         .expect("failed to parse forecast time")
@@ -77,6 +86,7 @@ fn parse_time(time: &str) -> Result<DateTime<Utc>, LocalResult<i8>> {
     }
 }
 
+#[instrument]
 fn transform_forecast_times_to_datetimes(forecast: &mut ims_structs::LocationForecasts) {
     forecast.location.iter_mut().for_each(|location| {
         location
@@ -91,6 +101,7 @@ fn transform_forecast_times_to_datetimes(forecast: &mut ims_structs::LocationFor
     });
 }
 
+#[instrument]
 fn transform_weather_code_to_english(forecast: &mut ims_structs::LocationForecasts) {
     forecast.location.iter_mut().for_each(|location| {
         location
@@ -164,5 +175,17 @@ mod tests {
         super::transform_forecast_times_to_datetimes(&mut forecasts);
         let time = &forecasts.location[0].location_data.forecast[0].forecast_time;
         assert_eq!(time, "2024-12-28T02:00:00+00:00");
+    }
+
+    #[test]
+    fn make_cache_online() {
+        let xml = super::make_cache(false);
+        assert_eq!(xml.is_file(), true);
+    }
+
+    #[test]
+    fn make_cache_offline() {
+        let xml = super::make_cache(true);
+        assert_eq!(xml.is_file(), true);
     }
 }

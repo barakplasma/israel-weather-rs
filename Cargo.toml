@@ -1,18 +1,32 @@
 [package]
-name = "weather"
-version = "0.3.1"
+name = "israel-weather-rs"
+version = "0.3.2"
 edition = "2021"
+rust-version = "1.83"
+description = "a utility to download the israeli weather forecast from ims.gov.il , save it to a cache, and allow recall at any point in the future from the cache as filtered by location and current time. meant for alerting the user to expected rain"
+readme = "README.md"
+repository = "https://github.com/barakplasma/israel-weather-rs"
+license = "MIT"
+
+[lints.rust]
+unsafe_code = "forbid"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 cached-path = "0.6"
 chrono = "0.4"
-clap = { version = "4", features = ["derive"] }
-serde = { version = "1", features = ["derive"]}
+clap = { version = "4.5", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
 serde-xml-rs = "0.6"
-serde_json = "1"
-log = "0.4"
+serde_json = "1.0"
+time = "0.3"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = [
+    "json",
+    "env-filter",
+    "local-time",
+] }
 
 [target.'cfg(target_arch = "aarch64")'.dependencies]
 openssl = { version = "0.10.62", features = ["vendored"] }
