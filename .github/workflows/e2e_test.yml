@@ -17,10 +17,10 @@ jobs:
         run: chmod +x ./weather_ubuntu-latest
 
       - name: Run E2E test - Tel Aviv
-        run: ./weather_ubuntu-latest
+        run: ./israel-weather-rs_ubuntu-latest
 
       - name: Run E2E test - All
-        run: ./weather_ubuntu-latest --all
+        run: ./israel-weather-rs_ubuntu-latest --all
 
       - name: Run E2E test - Offline
-        run: ./weather_ubuntu-latest --offline
+        run: ./israel-weather-rs_ubuntu-latest --offline
