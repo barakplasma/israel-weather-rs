@@ -19,17 +19,17 @@ jobs:
       - run: npm install -g shx
       - name: Build
         run: cargo build --release
-      - run: shx cp ./target/release/weather ./target/release/weather_${{matrix.os}}
+      - run: shx cp ./target/release/israel-weather-rs ./target/release/israel-weather-rs_${{matrix.os}}
         if: runner.os == 'Linux' || runner.os == 'macOS'
-      - run: shx cp target/release/weather.exe target/release/weather_windows-latest.exe
+      - run: shx cp target/release/israel-weather-rs.exe target/release/israel-weather-rs_windows-latest.exe
         if: runner.os == 'Windows'
       - name: Release Linux
         if: runner.os == 'Linux' || runner.os == 'macOS'
         uses: softprops/action-gh-release@v1
         with:
-          files: ./target/release/weather_${{matrix.os}}
+          files: ./target/release/israel-weather-rs_${{matrix.os}}
       - name: Release Windows
         if: runner.os == 'Windows'
         uses: softprops/action-gh-release@v1
         with:
-          files: target/release/weather_windows-latest.exe
+          files: target/release/israel-weather-rs_windows-latest.exe
