@@ -14,7 +14,7 @@ jobs:
         run: curl -s "https://api.github.com/repos/barakplasma/israel-weather-rs/releases/latest" | jq -r '.assets[] | select(.browser_download_url | contains("ubuntu")) | .browser_download_url' | xargs curl -LO
 
       - name: Make executable
-        run: chmod +x ./weather_ubuntu-latest
+        run: chmod +x ./israel-weather-rs_ubuntu-latest
 
       - name: Run E2E test - Tel Aviv
         run: ./israel-weather-rs_ubuntu-latest
