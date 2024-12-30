@@ -2,6 +2,10 @@ name: Cross-Compile
 
 on:
   push:
+    paths-ignore:
+      - '.github/**'
+      - '.vscode/**'
+
   workflow_dispatch:
   
 jobs:
