@@ -6,30 +6,35 @@ on:
   workflow_dispatch:
 
 jobs:
-  release:
+  release-unix:
     name: release ${{ matrix.os }}
     runs-on: ${{matrix.os}}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v3
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --release
+      - run: cp ./target/release/israel-weather-rs ./target/release/israel-weather-rs_${{matrix.os}}
+      - name: Release Linux
+        uses: softprops/action-gh-release@v1
+        with:
+          files: ./target/release/israel-weather-rs_${{matrix.os}}
+  release-windows:
+    name: release windows-latest
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v3
       - uses: Swatinem/rust-cache@v2
       - run: npm install -g shx
       - name: Build
         run: cargo build --release
-      - run: shx cp ./target/release/israel-weather-rs ./target/release/israel-weather-rs_${{matrix.os}}
-        if: runner.os == 'Linux' || runner.os == 'macOS'
       - run: shx cp target/release/israel-weather-rs.exe target/release/israel-weather-rs_windows-latest.exe
-        if: runner.os == 'Windows'
-      - name: Release Linux
-        if: runner.os == 'Linux' || runner.os == 'macOS'
-        uses: softprops/action-gh-release@v1
-        with:
-          files: ./target/release/israel-weather-rs_${{matrix.os}}
       - name: Release Windows
-        if: runner.os == 'Windows'
         uses: softprops/action-gh-release@v1
         with:
           files: target/release/israel-weather-rs_windows-latest.exe
+
