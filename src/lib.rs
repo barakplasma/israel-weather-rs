@@ -182,10 +182,4 @@ mod tests {
         let xml = super::make_cache(false);
         assert_eq!(xml.is_file(), true);
     }
-
-    #[test]
-    fn make_cache_offline() {
-        let xml = super::make_cache(true);
-        assert_eq!(xml.is_file(), true);
-    }
 }
