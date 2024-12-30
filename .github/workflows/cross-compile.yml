@@ -2,6 +2,7 @@ name: Cross-Compile
 
 on:
   push:
+  workflow_dispatch:
   
 jobs:
   cross-compile:
@@ -17,8 +18,7 @@ jobs:
       with:
         toolchain: 1.83.0
         default: true
-    - run: curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
-    - run: cargo binstall cross --no-confirm
+    - run: cargo install cross --git https://github.com/cross-rs/cross
     - run: cross build --release --target ${{matrix.target}}
     - run: mv target/${{matrix.target}}/release/israel-weather-rs target/${{matrix.target}}/release/israel-weather-rs_${{matrix.target}}
     - name: Release
