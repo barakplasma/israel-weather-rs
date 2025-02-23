@@ -16,14 +16,11 @@ jobs:
       - name: Make executable
         run: chmod +x ./israel-weather-rs_ubuntu-latest
 
-      - name: Run E2E test - Tel Aviv
-        run: ./israel-weather-rs_ubuntu-latest
+      - name: Alert me for rain
+        run: ./israel-weather-rs_ubuntu-latest | tail -n 22 | curl --globoff -H p:1 -d @- 'ntfy.sh/${{ secrets.NTFY_TOPIC }}?tpl=yes&t=%7B%7Brange%20.%7D%7D%0AAs%20of%20%7B%7B.ForecastTime%7D%7D%0A%7B%7B.Rain%7D%7D%20mm%20of%20Rain%20are%20expected%0AConditions%20expected%20are%20%7B%7B.WeatherCodeEnglish%7D%7D%0AMin%20%7B%7B.MinTemp%7D%7Dc%20-%20%7B%7B.MaxTemp%7D%7Dc%20Max%0A%7B%7Bend%7D%7D'
 
       - name: Run E2E test - All
         run: ./israel-weather-rs_ubuntu-latest --all
 
       - name: Run E2E test - Offline
         run: ./israel-weather-rs_ubuntu-latest --offline
-
-      - name: Alert me for rain
-        run: ./israel-weather-rs_ubuntu-latest | tail -n 21 | curl --globoff -d @- 'ntfy.sh/${{ secrets.NTFY_TOPIC }}?tpl=yes&t=%7B%7Brange%20.%7D%7D%0AAs%20of%20%7B%7B.ForecastTime%7D%7D%0A%7B%7B.Rain%7D%7D%20mm%20of%20Rain%20are%20expected%0AConditions%20expected%20are%20%7B%7B.WeatherCodeEnglish%7D%7D%0AMin%20%7B%7B.MinTemp%7D%7Dc%20-%20%7B%7B.MaxTemp%7D%7Dc%20Max%0A%7B%7Bend%7D%7D'
