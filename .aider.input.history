@@ -1,0 +1,48 @@
+
+# 2025-03-08 13:34:14.085061
++ls
+
+# 2025-03-08 13:35:04.666028
++I want to modify the source code so that it stops logging logs to stdout. I only want json on stdout, logs should be on stderr or debug logs or something
+
+# 2025-03-08 13:35:44.614353
++/diff
+
+# 2025-03-08 13:36:09.684494
++/run git push
+
+# 2025-03-08 13:36:39.908553
++/run act via podman
+
+# 2025-03-08 13:36:47.394017
++What's wrong? Fix
+
+# 2025-03-08 13:37:10.779794
++/run podman pull ghcr.io/nektos/act:latest
+
+# 2025-03-08 13:37:10.779902
++/run podman pull ghcr.io/nektos/act:latest
+
+# 2025-03-08 13:37:11.996665
++/run alias act='podman run --rm -it -v "$(pwd)":/github/workspace -w /github/workspace ghcr.io/nektos/act:latest'
+
+# 2025-03-08 13:37:11.996841
++/run alias act='podman run --rm -it -v "$(pwd)":/github/workspace -w /github/workspace ghcr.io/nektos/act:latest'
+
+# 2025-03-08 13:38:56.845162
++deal with this error:
+
+# 2025-03-08 13:39:05.241214
++   Compiling israel-weather-rs v0.3.2 (/home/runner/work/israel-weather-rs/israel-weather-rs)
++    Finished `dev` profile [unoptimized + debuginfo] target(s) in 47.20s
++     Running `target/debug/israel-weather-rs`
++thread 'main' panicked at /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tracing-subscriber-0.3.19/src/fmt/mod.rs:517:14:
++Unable to install global subscriber: SetGlobalDefaultError("a global default trace dispatcher has already been set")
++note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
++Error: Process completed with exit code 101.
+
+# 2025-03-08 19:31:07.216336
++/git pull --rebase
+
+# 2025-03-08 19:31:19.942711
++/exit
