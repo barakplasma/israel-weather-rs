@@ -25,7 +25,7 @@ jobs:
       uses: softprops/action-gh-release@v1
       with:
         files: target/${{matrix.target}}/release/israel-weather-rs_${{matrix.target}}
-    - uses: actions/upload-artifact@v3
+    - uses: actions/upload-artifact@v4
       with:
         name: israel-weather-rs_${{matrix.target}}
         path: target/${{matrix.target}}/release/israel-weather-rs_${{matrix.target}}
