@@ -2,7 +2,6 @@
 use israel_weather_rs::get_israeli_weather_forecast;
 use serde_json;
 use tracing::debug;
-use tracing_subscriber;
 
 use clap::Parser;
 
@@ -28,10 +27,6 @@ struct Args {
 }
 
 fn main() {
-    let format = tracing_subscriber::fmt::format().pretty();
-
-    tracing_subscriber::fmt().event_format(format).init();
-
     let args = Args::parse();
 
     let weather_data = get_israeli_weather_forecast(args.offline).expect("failed to get forecast");
