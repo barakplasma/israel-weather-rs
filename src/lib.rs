@@ -26,7 +26,7 @@ fn make_cache(offline: bool) -> PathBuf {
     trace!("build cache {}", offline);
 
     let cache = Cache::builder()
-        .dir(std::env::temp_dir().join("weather/"))
+        .dir(std::env::temp_dir())
         .connect_timeout(std::time::Duration::from_secs(60))
         .timeout(std::time::Duration::from_secs(60))
         .offline(offline)
