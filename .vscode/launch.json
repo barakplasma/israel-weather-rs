@@ -7,15 +7,15 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'weather'",
+            "name": "Debug executable 'israel-weather-rs'",
             "cargo": {
                 "args": [
                     "build",
-                    "--bin=weather",
-                    "--package=weather"
+                    "--bin=israel-weather-rs",
+                    "--package=israel-weather-rs"
                 ],
                 "filter": {
-                    "name": "weather",
+                    "name": "israel-weather-rs",
                     "kind": "bin"
                 }
             },
@@ -25,16 +25,16 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug unit tests in executable 'weather'",
+            "name": "Debug unit tests in executable 'israel-weather-rs'",
             "cargo": {
                 "args": [
                     "test",
                     "--no-run",
-                    "--bin=weather",
-                    "--package=weather"
+                    "--bin=israel-weather-rs",
+                    "--package=israel-weather-rs"
                 ],
                 "filter": {
-                    "name": "weather",
+                    "name": "israel-weather-rs",
                     "kind": "bin"
                 }
             },

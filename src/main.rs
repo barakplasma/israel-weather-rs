@@ -1,9 +1,7 @@
 #![allow(unused_parens)]
-use israel_weather_rs::get_israeli_weather_forecast;
+use clap::Parser;
 use serde_json;
 use tracing::debug;
-
-use clap::Parser;
 
 /// Downloads and Caches Israeli weather forecast from https://ims.gov.il and prints the next forecast for a location as json
 #[derive(Parser, Debug)]
@@ -29,9 +27,8 @@ struct Args {
 fn main() {
     let args = Args::parse();
 
-    let weather_data = get_israeli_weather_forecast(args.offline).expect("failed to get forecast");
-
-    let now = chrono::Utc::now();
+    let weather_data = israel_weather_rs::get_israeli_weather_forecast(args.offline)
+        .expect("failed to get forecast");
 
     if args.all {
         let json = serde_json::json!(weather_data);
@@ -43,22 +40,13 @@ fn main() {
         return;
     }
 
-    // get desired location and next forecast
-    let desired_location = weather_data
-        .location
-        .iter()
-        .find(|location| location.location_meta_data.location_name_eng == args.location)
-        .expect("failed to find location specified");
+    let desired_location = israel_weather_rs::find_location(&args.location, &weather_data);
 
-    let next_forecasts: Vec<_> = desired_location.location_data.forecast
-        .iter()
-        .filter(|forecast| {
-            chrono::DateTime::parse_from_rfc3339(&forecast.forecast_time)
-                .expect("failed to parse forecast datetime")
-                > now
-        })
-        .take((args.next / 6) as usize)
-        .collect();
+    let next_forecasts = israel_weather_rs::forecasts_for_location_for_next_n_hours(
+        args.next,
+        &desired_location,
+        chrono::Utc::now(),
+    );
 
     debug!("{:?}", next_forecasts);
 
