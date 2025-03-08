@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use tracing::{error, instrument, trace, warn};
+use tracing::{error, instrument, trace, warn, Level};
 use tracing_subscriber::fmt::format::FmtSpan;
 use tracing_subscriber::fmt::SubscriberBuilder;
 
@@ -13,11 +13,15 @@ static WEATHER_URL: &str =
     "https://ims.gov.il/sites/default/files/ims_data/xml_files/isr_cities_1week_6hr_forecast.xml";
 
 fn init_logging() {
-    SubscriberBuilder::default()
+    let subscriber = SubscriberBuilder::default()
         .with_writer(std::io::stderr)
         .with_span_events(FmtSpan::CLOSE)
         .json()
-        .init();
+        .with_max_level(Level::WARN) // Set the default log level to WARN
+        .finish();
+    
+    tracing::subscriber::set_global_default(subscriber)
+        .expect("setting default subscriber failed");
 }
 fn make_cache(offline: bool) -> PathBuf {
     init_logging();
