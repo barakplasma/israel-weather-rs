@@ -247,7 +247,7 @@ mod tests {
 
     #[test]
     fn test_get_israeli_weather_forecast() {
-        let forecast = super::get_israeli_weather_forecast(true);
+        let forecast = super::get_israeli_weather_forecast(false);
         assert_eq!(forecast.is_ok(), true);
     }
 
