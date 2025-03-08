@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 use tracing::{error, instrument, trace, warn};
+use tracing_subscriber::fmt::format::FmtSpan;
+use tracing_subscriber::fmt::SubscriberBuilder;
 
 use cached_path::Cache;
 use chrono::{DateTime, LocalResult, NaiveDateTime, Utc};
@@ -10,8 +12,15 @@ mod ims_structs;
 static WEATHER_URL: &str =
     "https://ims.gov.il/sites/default/files/ims_data/xml_files/isr_cities_1week_6hr_forecast.xml";
 
-#[instrument]
+fn init_logging() {
+    SubscriberBuilder::default()
+        .with_writer(std::io::stderr)
+        .with_span_events(FmtSpan::CLOSE)
+        .json()
+        .init();
+}
 fn make_cache(offline: bool) -> PathBuf {
+    init_logging();
     trace!("build cache {}", offline);
 
     let cache = Cache::builder()
