@@ -23,7 +23,7 @@ jobs:
 
       - name: Alert me for rain
         # jq command https://play.jqlang.org/s/k9O1YEC-3hMC-Xc
-        run: ./israel-weather-rs_ubuntu-latest | tee weather.json | curl --globoff -H p:$(jq "if .[0].Rain > 0 then 4 else 1 end" weather.json) -H Actions:"view, Open IMS, https://ims.gov.il/en/cityPortal?lid=84" -d @- 'ntfy.sh/${{ secrets.NTFY_TOPIC }}?tpl=yes&t=${{ env.template }}' -T weather.json
+        run: ./israel-weather-rs_ubuntu-latest | tee weather.json | curl --globoff -H p:$(jq "if .[0].Rain > 0 then 4 else 1 end" weather.json) -H Actions:"view, Open IMS, https://ims.gov.il/en/cityPortal?lid=84" -d @- 'ntfy.sh/${{ secrets.NTFY_TOPIC }}?tpl=yes&t=${{ env.template }}'
 
       - name: Run E2E test - Offline
         run: ./israel-weather-rs_ubuntu-latest --offline
