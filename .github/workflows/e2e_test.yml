@@ -23,7 +23,7 @@ jobs:
 
       - name: Alert me for rain
         # jq command https://play.jqlang.org/s/k9O1YEC-3hMC-Xc
-        run: ./israel-weather-rs_ubuntu-latest | tee weather.json | curl --globoff -H p:$(jq "if .[0].Rain > 0 then 4 else 1 end" weather.json) -H tag:$(jq "if .[0].Rain > 0 then cloud_with_rain else sun_behind_small_cloud end" weather.json) -H Actions:"view, Open IMS, https://ims.gov.il/en/cityPortal?lid=84; view, Open Action, https://github.com/barakplasma/israel-weather-rs/actions/workflows/e2e_test.yml" -d @- 'ntfy.sh/${{ secrets.NTFY_TOPIC }}?tpl=yes&t=${{ env.template }}&message=weather.forecast'
+        run: ./israel-weather-rs_ubuntu-latest | tee weather.json | curl --globoff -H p:$(jq "if .[0].Rain > 0 then 4 else 1 end" weather.json) -H tag:$(jq "if .[0].Rain > 0 then 'cloud_with_rain' else 'sun_behind_small_cloud' end" weather.json) -H Actions:"view, Open IMS, https://ims.gov.il/en/cityPortal?lid=84; view, Open Action, https://github.com/barakplasma/israel-weather-rs/actions/workflows/e2e_test.yml" -d @- 'ntfy.sh/${{ secrets.NTFY_TOPIC }}?tpl=yes&t=${{ env.template }}&message=weather.forecast'
 
       - name: Run E2E test - Offline
         run: ./israel-weather-rs_ubuntu-latest --offline
