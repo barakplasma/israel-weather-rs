@@ -21,13 +21,6 @@ jobs:
       - name: Make executable
         run: chmod +x ./israel-weather-rs_ubuntu-latest
 
-      - name: Cache tmp dir
-        uses: actions/cache@v4
-        with:
-          key: ${{ runner.os }}-cache-${{ hashFiles('**/src/lib.rs') }}
-          path: /tmp
-          save-always: yes
-
       - name: Get Weather
         run: ./israel-weather-rs_ubuntu-latest -n 24 | tee weather.json
 
@@ -38,4 +31,4 @@ jobs:
           retention-days: 14
 
       - name: Send notification
-        run: curl --data @weather.json ntfy.sh/${{ secrets.NTFY_TOPIC }}?tpl=yes&m=$(cat ntfy-template.tmpl | jq -sRr @uri)
+        run: curl --data @weather.json ntfy.sh/${{ secrets.NTFY_TOPIC }}?tpl=yes&t=$(cat ntfy-template.tmpl | jq -sRr @uri)
