@@ -26,6 +26,7 @@ jobs:
         with:
           key: ${{ runner.os }}-cache-${{ hashFiles('**/src/lib.rs') }}
           path: /tmp
+          save-always: yes
 
       - name: Get Weather
         run: ./israel-weather-rs_ubuntu-latest -n 24 | tee weather.json
