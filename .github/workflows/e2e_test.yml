@@ -8,9 +8,8 @@ on:
     branches: [ "teest" ]
 
 jobs:
-  run:
+  setup:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
 
@@ -29,6 +28,9 @@ jobs:
           name: weather.json
           path: weather.json
           retention-days: 14
+      
+      - name: Will it rain?
+        run: export RAIN=$(jq "max_by(.Rain).Rain > 0" weather.json); echo $RAIN
 
       - name: Send notification
-        run: curl --data @weather.json ntfy.sh/${{ secrets.NTFY_TOPIC }}?tpl=yes&t=$(cat ntfy-template.tmpl | jq -sRr @uri)
+        run: curl -H Priority:4 -H Click:"https://ims.gov.il/en/cityPortal?lid=84" --data @weather.json 'ntfy.sh/${{ secrets.NTFY_TOPIC }}' --data-urlencode m@ntfy-template.tmpl
