@@ -37,8 +37,9 @@ jobs:
           retention-days: 14
 
       - name: Send notification
+      # ntfy.sh/${{ secrets.NTFY_TOPIC }}
         run: |
-          curl ntfy.sh/${{ secrets.NTFY_TOPIC }} --globoff \
+          curl https://httpbin.org/anything --globoff \
           -H X-Priority:$(jq "if max_by(.Rain).Rain > 0 then 4 else 1 end" weather.json) \
           -H X-Tags:$(jq 'map(if .Rain > 0 then "cloud_with_rain" else "sun_behind_small_cloud" end)' weather.json) \
           -H 'X-Actions: view, Open Action, https://github.com/barakplasma/israel-weather-rs/actions/workflows/e2e_test.yml' \
