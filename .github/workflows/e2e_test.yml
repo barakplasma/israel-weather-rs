@@ -5,9 +5,11 @@ on:
     - cron: "1 6/6 * * *"
   workflow_dispatch:
 
+
 jobs:
   end-to-end-test:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
