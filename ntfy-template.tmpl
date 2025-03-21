@@ -1,0 +1,4 @@
+|time|desc|temp|
+|---|---|---|
+{{range .}}|{{slice .ForecastTime 11 16}}|{{if gt .Rain 0.0}}{{.Rain}} mm of Rain are expected. {{.WeatherCodeEnglish}}{{else}}No rain expected. {{.WeatherCodeEnglish}}{{end}}|{{.MinTemp}}c-{{.MaxTemp}}c|
+{{end}}
