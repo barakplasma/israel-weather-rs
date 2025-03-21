@@ -34,7 +34,7 @@ jobs:
         run: |
           curl -H Priority:$(if $RAIN; then 4; else 1; fi) \
           -H Click:"https://ims.gov.il/en/cityPortal?lid=84" \
-          --url-query title="Weather Report" \
+          --url-query title=$(if $RAIN; then "Rain Expected"; else "No Rain"; fi) \
           --url-query message@ntfy-template.tmpl \
           -H Content-Type:"application/json" \
           -H Template:yes \
