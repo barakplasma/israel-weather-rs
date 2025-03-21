@@ -38,4 +38,4 @@ jobs:
           retention-days: 14
 
       - name: Send notification
-        run: curl --globoff "ntfy.sh/${{ secrets.NTFY_TOPIC }}/?tpl=yes" --data @weather.json --data-urlencode t@ntfy-template.tmpl -H X-Priority:$(jq 'if max_by(.Rain).Rain > 0 then 4 else 1 end' weather.json) -H X-Tags:$(jq 'map(if .Rain > 0 then "cloud_with_rain" else "sun_behind_small_cloud" end)' weather.json) -H 'X-Actions: view, Open Action, https://github.com/barakplasma/israel-weather-rs/actions/workflows/e2e_test.yml' -H 'X-Click: https://ims.gov.il/en/cityPortal?lid=84' -H 'Content-Type: application/json' 
+        run: curl --globoff https://httpbin.org/anything/?tpl=yes --data @weather.json --data-urlencode t@ntfy-template.tmpl -H X-Priority:$(jq 'if max_by(.Rain).Rain > 0 then 4 else 1 end' weather.json) -H X-Tags:$(jq 'map(if .Rain > 0 then \"cloud_with_rain\" else \"sun_behind_small_cloud\" end)' weather.json) -H 'X-Actions: view, Open Action, https://github.com/barakplasma/israel-weather-rs/actions/workflows/e2e_test.yml' -H 'X-Click: https://ims.gov.il/en/cityPortal?lid=84' -H 'Content-Type: application/json'
