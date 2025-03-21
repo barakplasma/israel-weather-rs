@@ -1,3 +1,6 @@
 {
-	"image": "mcr.microsoft.com/devcontainers/rust:1"
+	"image": "mcr.microsoft.com/devcontainers/rust:1",
+	"features": {
+		"ghcr.io/devcontainers-extra/features/act:1": {}
+	}
 }
