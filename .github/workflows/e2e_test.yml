@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 env:
-  template: "%7B%7Brange%20.%7D%7D%0A%7B%7Bif%20gt%20.Rain%200.0%7D%7D%7B%7B.Rain%7D%7D%20mm%20of%20Rain%20are%20expected.%20%7B%7B.WeatherCodeEnglish%7D%7D%7B%7Belse%7D%7DNo%20rain%20expected.%20%7B%7B.WeatherCodeEnglish%7D%7D%7B%7Bend%7D%7D%0AHigh%20%7B%7B.MinTemp%7D%7Dc%0ALow%20%20%7B%7B.MaxTemp%7D%7Dc%0AAt%20%7B%7Bslice%20.ForecastTime%2011%2016%7D%7D%0A%7B%7Bend%7D%7D"
+  template: ""
 # https://repeatit.io/#/share/eyJ0ZW1wbGF0ZSI6Int7cmFuZ2UgLn19XG57e2lmIGd0IC5SYWluIDAuMH19e3suUmFpbn19IG1tIG9mIFJhaW4gYXJlIGV4cGVjdGVkLiB7ey5XZWF0aGVyQ29kZUVuZ2xpc2h9fXt7ZWxzZX19Tm8gcmFpbiBleHBlY3RlZC4ge3suV2VhdGhlckNvZGVFbmdsaXNofX17e2VuZH19XG5IaWdoIHt7Lk1pblRlbXB9fWNcbkxvdyAge3suTWF4VGVtcH19Y1xuQXQge3tzbGljZSAuRm9yZWNhc3RUaW1lIDExIDE2fX1cbnt7ZW5kfX0iLCJpbnB1dCI6IlsgIHtcbiAgICBcIkZvcmVjYXN0VGltZVwiOiBcIjIwMjUtMDItMjRUMDI6MDA6MDArMDA6MDBcIixcbiAgICBcIlRlbXBlcmF0dXJlXCI6IDYuMCxcbiAgICBcIlJlbGF0aXZlSHVtaWRpdHlcIjogNjMuMCxcbiAgICBcIldpbmRTcGVlZFwiOiA1LjAsXG4gICAgXCJSYWluXCI6IDAuMCxcbiAgICBcIldpbmREaXJlY3Rpb25cIjogOTAuMCxcbiAgICBcIkRld1BvaW50VGVtcFwiOiAtMS4wLFxuICAgIFwiSGVhdFN0cmVzc1wiOiA0LjYsXG4gICAgXCJIZWF0U3RyZXNzTGV2ZWxcIjogMC4wLFxuICAgIFwiRmVlbHNMaWtlXCI6IDUuMCxcbiAgICBcIldpbmRDaGlsbFwiOiA1LjAsXG4gICAgXCJXZWF0aGVyQ29kZVwiOiAxNTQwLFxuICAgIFwiV2VhdGhlckNvZGVFbmdsaXNoXCI6IFwiQ2xvdWR5LCBwb3NzaWJsZSByYWluXCIsXG4gICAgXCJNaW5UZW1wXCI6IDYuMCxcbiAgICBcIk1heFRlbXBcIjogNy4wLFxuICAgIFwiVXZJbmRleFwiOiBudWxsLFxuICAgIFwiVXZJbmRleE1heFwiOiBudWxsXG4gIH1cbl0iLCJjb25maWciOnsidGVtcGxhdGUiOiJ0ZXh0IiwiZnVsbFNjcmVlbkhUTUwiOmZhbHNlLCJmdW5jdGlvbnMiOiIiLCJvcHRpb25zIjpbImxpdmUiXSwiaW5wdXRUeXBlIjoieWFtbCJ9fQ==
 
 jobs:
@@ -23,7 +23,7 @@ jobs:
 
       - name: Alert me for rain
         # jq command https://play.jqlang.org/s/k9O1YEC-3hMC-Xc
-        run: ./israel-weather-rs_ubuntu-latest -n 24 | tee weather.json | curl --globoff -H p:$(jq "if .[0].Rain > 0 then 4 else 1 end" weather.json) -H tag:$(jq "if .[0].Rain > 0 then \"cloud_with_rain\" else \"sun_behind_small_cloud\" end" weather.json) -H Actions:"view, Open IMS, https://ims.gov.il/en/cityPortal?lid=84; view, Open Action, https://github.com/barakplasma/israel-weather-rs/actions/workflows/e2e_test.yml" -d @- 'ntfy.sh/${{ secrets.NTFY_TOPIC }}?tpl=yes&t=${{ env.template }}&message=weather.forecast'
+        run: ./israel-weather-rs_ubuntu-latest -n 24 | tee weather.json | curl --globoff -H p:$(jq "if .[0].Rain > 0 then 4 else 1 end" weather.json) -H tag:$(jq "if .[0].Rain > 0 then \"cloud_with_rain\" else \"sun_behind_small_cloud\" end" weather.json) -H Actions:"view, Open IMS, https://ims.gov.il/en/cityPortal?lid=84; view, Open Action, https://github.com/barakplasma/israel-weather-rs/actions/workflows/e2e_test.yml" --data-urlencode "t={{ env.template }}" -d @- 'ntfy.sh/${{ secrets.NTFY_TOPIC }}?tpl=yes'
 
       - name: Run E2E test - Offline
         run: ./israel-weather-rs_ubuntu-latest --offline
