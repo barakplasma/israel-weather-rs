@@ -4,6 +4,8 @@ on:
   schedule:
     - cron: "1 6/6 * * *"
   workflow_dispatch:
+  push:
+    branches: [ "teest" ]
 
 env:
   template: |
