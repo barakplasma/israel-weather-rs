@@ -21,6 +21,11 @@ jobs:
       - name: Make executable
         run: chmod +x ./israel-weather-rs_ubuntu-latest
 
+      - name: Cache tmp dir
+        uses: actions/cache@v4
+        with:
+          path: /tmp
+
       - name: Get Weather
         run: ./israel-weather-rs_ubuntu-latest -n 24 | tee weather.json
 
@@ -32,7 +37,7 @@ jobs:
 
       - name: Send notification
         run: |
-          curl ntfy.sh/${{ secrets.NTFY_TOPIC }} --globoff \
+          curl "ntfy.sh/${{ secrets.NTFY_TOPIC }}" --globoff \
           -H X-Priority:$(jq "if max_by(.Rain).Rain > 0 then 4 else 1 end" weather.json) \
           -H X-Tags:$(jq 'map(if .Rain > 0 then "cloud_with_rain" else "sun_behind_small_cloud" end)' weather.json) \
           -H X-Actions:"view, Open Action, https://github.com/barakplasma/israel-weather-rs/actions/workflows/e2e_test.yml" \
