@@ -33,4 +33,4 @@ jobs:
         run: export RAIN=$(jq "max_by(.Rain).Rain > 0" weather.json); echo $RAIN
 
       - name: Send notification
-        run: curl -H Priority:4 -H Click:"https://ims.gov.il/en/cityPortal?lid=84" --data-urlencode t@ntfy-template.tmpl -H Content-Type:"application/json" --data @weather.json 'ntfy.sh/${{ secrets.NTFY_TOPIC }}'
+        run: curl -H Priority:$(if $RAIN; then 4; else 1; fi) -H Click:"https://ims.gov.il/en/cityPortal?lid=84" --url-query title="Weather Report" --url-query message@ntfy-template.tmpl -H Content-Type:"application/json" -H Template:yes --data @weather.json 'ntfy.sh/${{ secrets.NTFY_TOPIC }}'
