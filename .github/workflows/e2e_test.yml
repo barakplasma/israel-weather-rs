@@ -21,18 +21,25 @@ jobs:
       - name: Make executable
         run: chmod +x ./israel-weather-rs_ubuntu-latest
 
-      - name: Alert me for rain
+      - name: Get Weather
+        run: ./israel-weather-rs_ubuntu-latest -n 24 | tee weather.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: weather.json
+          path: weather.json
+          retention-days: 14
+
+      - name: Send notification
         run: |
-          ./israel-weather-rs_ubuntu-latest -n 24 | tee weather.json | curl --globoff \
+          curl --globoff \
           -H X-Priority:$(jq "if max_by(.Rain).Rain > 0 then 4 else 1 end" weather.json) \
           -H X-Tags:$(jq 'map(if .Rain > 0 then "cloud_with_rain" else "sun_behind_small_cloud" end)' weather.json) \
           -H X-Actions:"view, Open Action, https://github.com/barakplasma/israel-weather-rs/actions/workflows/e2e_test.yml" \
           -H X-Click:"https://ims.gov.il/en/cityPortal?lid=84" \
           -H X-Template:yes \
           -H X-Title:Weather-Alert \
-          -d @- \
+          -H Content-Type:application/json \
+          --data @weather.json \
           --data-urlencode message@ntfy-template.tmpl \
           ntfy.sh/${{ secrets.NTFY_TOPIC }}
-
-      - name: Run E2E test - Offline
-        run: ./israel-weather-rs_ubuntu-latest --offline -n 24
