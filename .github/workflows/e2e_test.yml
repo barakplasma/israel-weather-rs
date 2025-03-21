@@ -17,7 +17,7 @@ env:
       "message": .,
       "title": .[0].WeatherCodeEnglish,
       "tags": map(if .Rain > 0 then "cloud_with_rain" else "sun_behind_small_cloud" end),
-      "priority": (if max_by(.Rain).Rain > 0 then 4 else 1 end),
+      "priority": if max_by(.Rain).Rain > 0 then 4 else 1 end,
       "click": "https://ims.gov.il/en/cityPortal?lid=84",
       "actions": [{
           "action": "view",
