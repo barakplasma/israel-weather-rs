@@ -38,4 +38,4 @@ jobs:
           retention-days: 14
 
       - name: Send notification
-        run: curl --data @weather.json ntfy.sh/${{ secrets.NTFY_TOPIC }}
+        run: curl --data @weather.json ntfy.sh/${{ secrets.NTFY_TOPIC }}?tpl=yes&m=$(cat ntfy-template.tmpl | jq -sRr @uri)
