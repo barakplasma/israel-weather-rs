@@ -13,8 +13,7 @@ env:
     {{end}}
   # https://repeatit.io/#/share/eyJ0ZW1wbGF0ZSI6Inx0aW1lfGRlc2N8dGVtcHxcbnwtLS18LS0tfC0tLXxcbnt7cmFuZ2UgLn19fHt7c2xpY2UgLkZvcmVjYXN0VGltZSAxMSAxNn19fHt7aWYgZ3QgLlJhaW4gMC4wfX17ey5SYWlufX0gbW0gb2YgUmFpbiBhcmUgZXhwZWN0ZWQuIHt7LldlYXRoZXJDb2RlRW5nbGlzaH19e3tlbHNlfX1ObyByYWluIGV4cGVjdGVkLiB7ey5XZWF0aGVyQ29kZUVuZ2xpc2h9fXt7ZW5kfX18e3suTWluVGVtcH19Yy17ey5NYXhUZW1wfX1jfFxue3tlbmR9fSIsImlucHV0IjoiWyAge1xuICAgIFwiRm9yZWNhc3RUaW1lXCI6IFwiMjAyNS0wMi0yNFQwMjowMDowMCswMDowMFwiLFxuICAgIFwiVGVtcGVyYXR1cmVcIjogNi4wLFxuICAgIFwiUmVsYXRpdmVIdW1pZGl0eVwiOiA2My4wLFxuICAgIFwiV2luZFNwZWVkXCI6IDUuMCxcbiAgICBcIlJhaW5cIjogMC4wLFxuICAgIFwiV2luZERpcmVjdGlvblwiOiA5MC4wLFxuICAgIFwiRGV3UG9pbnRUZW1wXCI6IC0xLjAsXG4gICAgXCJIZWF0U3RyZXNzXCI6IDQuNixcbiAgICBcIkhlYXRTdHJlc3NMZXZlbFwiOiAwLjAsXG4gICAgXCJGZWVsc0xpa2VcIjogNS4wLFxuICAgIFwiV2luZENoaWxsXCI6IDUuMCxcbiAgICBcIldlYXRoZXJDb2RlXCI6IDE1NDAsXG4gICAgXCJXZWF0aGVyQ29kZUVuZ2xpc2hcIjogXCJDbG91ZHksIHBvc3NpYmxlIHJhaW5cIixcbiAgICBcIk1pblRlbXBcIjogNi4wLFxuICAgIFwiTWF4VGVtcFwiOiA3LjAsXG4gICAgXCJVdkluZGV4XCI6IG51bGwsXG4gICAgXCJVdkluZGV4TWF4XCI6IG51bGxcbiAgfSwge1xuICAgIFwiRm9yZWNhc3RUaW1lXCI6IFwiMjAyNS0wMi0yNFQwODowMDowMCswMDowMFwiLFxuICAgIFwiVGVtcGVyYXR1cmVcIjogNi4wLFxuICAgIFwiUmVsYXRpdmVIdW1pZGl0eVwiOiA2My4wLFxuICAgIFwiV2luZFNwZWVkXCI6IDUuMCxcbiAgICBcIlJhaW5cIjogMC4wLFxuICAgIFwiV2luZERpcmVjdGlvblwiOiA5MC4wLFxuICAgIFwiRGV3UG9pbnRUZW1wXCI6IC0xLjAsXG4gICAgXCJIZWF0U3RyZXNzXCI6IDQuNixcbiAgICBcIkhlYXRTdHJlc3NMZXZlbFwiOiAwLjAsXG4gICAgXCJGZWVsc0xpa2VcIjogNS4wLFxuICAgIFwiV2luZENoaWxsXCI6IDUuMCxcbiAgICBcIldlYXRoZXJDb2RlXCI6IDE1NDAsXG4gICAgXCJXZWF0aGVyQ29kZUVuZ2xpc2hcIjogXCJDbG91ZHksIHBvc3NpYmxlIHJhaW5cIixcbiAgICBcIk1pblRlbXBcIjogNi4wLFxuICAgIFwiTWF4VGVtcFwiOiA3LjAsXG4gICAgXCJVdkluZGV4XCI6IG51bGwsXG4gICAgXCJVdkluZGV4TWF4XCI6IG51bGxcbiAgfVxuXSIsImNvbmZpZyI6eyJ0ZW1wbGF0ZSI6InRleHQiLCJmdWxsU2NyZWVuSFRNTCI6ZmFsc2UsImZ1bmN0aW9ucyI6IiIsIm9wdGlvbnMiOlsibGl2ZSJdLCJpbnB1dFR5cGUiOiJ5YW1sIn19
   jqtemplate: |
-    { 
-      "topic": "${{ secrets.NTFY_TOPIC }}",
+    { "topic": "${{ secrets.NTFY_TOPIC }}",
       "message": .,
       "title": .[0].WeatherCodeEnglish,
       "tags": map(if .Rain > 0 then "cloud_with_rain" else "sun_behind_small_cloud" end),
@@ -23,9 +22,7 @@ env:
       "actions": [{
           "action": "view",
           "label": "Open Action",
-          "url": "https://github.com/barakplasma/israel-weather-rs/actions/workflows/e2e_test.yml"
-      }]
-    }
+          "url": "https://github.com/barakplasma/israel-weather-rs/actions/workflows/e2e_test.yml"}]}
   # https://play.jqlang.org/s/-rW2MtpafzZ29J7
 
 jobs:
