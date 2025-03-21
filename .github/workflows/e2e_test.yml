@@ -12,6 +12,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - uses: actions/checkout@v4
+
       - name: Get latest release asset
         # jq command https://play.jqlang.org/s/s0plyKVNy1fs_Wv
         run: curl -s "https://api.github.com/repos/barakplasma/israel-weather-rs/releases/latest" | jq -r '.assets[] | select(.browser_download_url | contains("ubuntu")) | .browser_download_url' | xargs curl -LO
