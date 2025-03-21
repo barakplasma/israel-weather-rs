@@ -36,8 +36,9 @@ jobs:
       - name: Make executable
         run: chmod +x ./israel-weather-rs_ubuntu-latest
 
+      - name: Print
+        run: ./israel-weather-rs_ubuntu-latest -n 24 | jq "${{ env.jqtemplate }}"
       - name: Alert me for rain
         run: ./israel-weather-rs_ubuntu-latest -n 24 | jq "${{ env.jqtemplate }}" | curl -H X-Template=yes -d @- ntfy.sh
-
       - name: Run E2E test - Offline
         run: ./israel-weather-rs_ubuntu-latest --offline -n 24
