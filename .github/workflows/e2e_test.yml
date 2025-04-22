@@ -13,6 +13,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install jq curl
+
       - name: Get latest release asset
         # jq command https://play.jqlang.org/s/s0plyKVNy1fs_Wv
         run: curl -s "https://api.github.com/repos/barakplasma/israel-weather-rs/releases/latest" | jq -r '.assets[] | select(.browser_download_url | contains("ubuntu")) | .browser_download_url' | xargs curl -LO
@@ -34,9 +39,9 @@ jobs:
 
       - name: Send notification
         run: |
-          curl -H Priority:$(if $RAIN; then 4; else 1; fi) \
+          curl -H Priority:$([ -n "$RAIN" ] && echo 4 || echo 1) \
           -H Click:"https://ims.gov.il/en/cityPortal?lid=84" \
-          --url-query title=$(if $RAIN; then "Rain Expected"; else "No Rain"; fi) \
+          --url-query "title=$(if [ -n "$RAIN" ]; then echo "Rain Expected"; else echo "No Rain"; fi)" \
           --url-query message@ntfy-template.tmpl \
           -H Content-Type:"application/json" \
           -H Template:yes \
