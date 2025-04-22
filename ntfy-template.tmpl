@@ -1,15 +1,2 @@
-{{/* Define target widths */}}
-{{- $timeWidth := 5 -}}
-{{- $iconWidth := 1 -}}
-{{- $descWidth := 20 -}}
-{{- $tempWidth := 7 -}}
-
-{{ range . -}}
-  {{- /* Prepare data for the row */ -}}
-  {{- $time := slice .ForecastTime 11 16 -}}
-  {{- $icon := "🌞" }}{{ if gt .Rain 0.0 }}{{ $icon = "🌧️" }}{{ end -}}
-  {{- $desc := .WeatherCodeEnglish }}{{ if gt .Rain 0.0 }}{{ $desc = printf "%.1f cm rain. %s" .Rain .WeatherCodeEnglish }}{{ end -}}
-  {{- $tempStr := printf "%.0fc-%.0fc" .MinTemp .MaxTemp -}}
-  {{ printf "|%-*s|%-*s|%-*.*s|%-*s|" $timeWidth $time $iconWidth $icon $descWidth $descWidth $desc $tempWidth $tempStr }}
-  {{- print "\n" -}}{{/* Ensure only one newline per row */}}
-{{- end }}
+{{range .}}|{{slice .ForecastTime 11 16}}|{{if gt .Rain 0.0}}🌧️{{else}}🌞{{end}}|{{if gt .Rain 0.0}}{{.Rain}} cm of rain expected. {{end}}{{.WeatherCodeEnglish}}|{{.MinTemp}}c-{{.MaxTemp}}c|
+{{end}}
