@@ -39,9 +39,9 @@ jobs:
 
       - name: Send notification
         run: |
-          curl -H Priority:$(if $RAIN; then 4; else 1; fi) \
+          curl -H Priority:$([ -n "$RAIN" ] && echo 4 || echo 1) \
           -H Click:"https://ims.gov.il/en/cityPortal?lid=84" \
-          --url-query title=$(if $RAIN; then "Rain Expected"; else "No Rain"; fi) \
+          --url-query "title=$(if [ -n "$RAIN" ]; then echo "Rain Expected"; else echo "No Rain"; fi)" \
           --url-query message@ntfy-template.tmpl \
           -H Content-Type:"application/json" \
           -H Template:yes \
