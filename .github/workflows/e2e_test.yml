@@ -35,13 +35,13 @@ jobs:
           retention-days: 14
       
       - name: Will it rain?
-        run: export RAIN=$(jq "max_by(.Rain).Rain > 0" weather.json); echo $RAIN
+        run: echo "RAIN=$(jq "max_by(.Rain).Rain > 0" weather.json)" >> $GITHUB_ENV
 
       - name: Send notification
         run: |
-          curl -H Priority:$([ -n "$RAIN" ] && echo 4 || echo 1) \
+          curl -H Priority:$([ "$RAIN" == "true" ] && echo 4 || echo 1) \
           -H Click:"https://ims.gov.il/en/cityPortal?lid=84" \
-          --url-query "title=$(if [ -n "$RAIN" ]; then echo "Rain Expected"; else echo "No Rain"; fi)" \
+          --url-query "title=$(if [ "$RAIN" == "true" ]; then echo "Rain Expected"; else echo "No Rain"; fi)" \
           --url-query message@ntfy-template.tmpl \
           -H Content-Type:"application/json" \
           -H Template:yes \
