@@ -2,8 +2,8 @@ name: E2E test every 6 hours
 
 on:
   schedule:
-    - cron: "1 6/6 * * *"
-  workflow_dispatch:
+    - cron: "1 6/6 * * *" # Runs at 1 minute past the 6th hour, every 6 hours (6:01, 12:01, 18:01, 0:01 UTC)
+  workflow_dispatch: # Allows manual triggering
 
 
 jobs:
@@ -11,39 +11,53 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Install tools
         run: |
           sudo apt-get update
-          sudo apt-get install jq curl
+          sudo apt-get install -y jq curl # Added -y for non-interactive install
 
       - name: Get latest release asset
-        # jq command https://play.jqlang.org/s/s0plyKVNy1fs_Wv
-        run: curl -s "https://api.github.com/repos/barakplasma/israel-weather-rs/releases/latest" | jq -r '.assets[] | select(.browser_download_url | contains("ubuntu")) | .browser_download_url' | xargs curl -LO
+        run: |
+          DOWNLOAD_URL=$(curl -s "https://api.github.com/repos/barakplasma/israel-weather-rs/releases/latest" | jq -r '.assets[] | select(.browser_download_url | contains("ubuntu")) | .browser_download_url')
+          curl -Lo ./israel-weather-rs_ubuntu-latest "$DOWNLOAD_URL"
+        shell: bash # Ensure bash is used for command substitution
 
       - name: Make executable
         run: chmod +x ./israel-weather-rs_ubuntu-latest
 
       - name: Get Weather
+        # Get weather for the next 24 hours and save to weather.json
         run: ./israel-weather-rs_ubuntu-latest -n 24 | tee weather.json
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload weather data artifact
+        uses: actions/upload-artifact@v4
         with:
           name: weather.json
           path: weather.json
-          retention-days: 14
-      
-      - name: Will it rain?
-        run: export RAIN=$(jq "max_by(.Rain).Rain > 0" weather.json); echo $RAIN
+          retention-days: 14 # Keep artifact for 14 days
 
-      - name: Send notification
+      - name: Will it rain?
+        id: rain_check
+        # Check if any forecast entry has rain > 0. Output 'RAIN=true' or 'RAIN=false' to GITHUB_ENV
+        # This makes the RAIN variable available to subsequent steps in the job.
+        run: echo "RAIN=$(jq 'any(.forecasts[]; .rain > 0)' weather.json)" >> $GITHUB_ENV
+        shell: bash # Ensure bash is used for jq command
+
+      - name: Send notification via ntfy.sh
+        # Use the RAIN environment variable set in the previous step
         run: |
-          curl -H Priority:$([ -n "$RAIN" ] && echo 4 || echo 1) \
-          -H Click:"https://ims.gov.il/en/cityPortal?lid=84" \
-          --url-query "title=$(if [ -n "$RAIN" ]; then echo "Rain Expected"; else echo "No Rain"; fi)" \
-          --url-query message@ntfy-template.tmpl \
-          -H Content-Type:"application/json" \
-          -H Template:yes \
-          --data @weather.json \
-          'ntfy.sh/${{ secrets.NTFY_TOPIC }}'
+          # Set Priority header: 4 (low) if rain expected, 1 (min) if no rain
+          # Set Title header based on whether rain is expected
+          curl -H "Priority: $([ "$RAIN" == "true" ] && echo 4 || echo 1)" \
+               -H "Click: https://ims.gov.il/en/cityPortal?lid=84" \
+               --url-query "title=$(if [ "$RAIN" == "true" ]; then echo "Rain Expected"; else echo "No Rain"; fi)" \
+               --url-query message@ntfy-template.tmpl \
+               -H "Content-Type: application/json" \
+               -H "Template: yes" \
+               --data @weather.json \
+               'https://ntfy.sh/${{ secrets.NTFY_TOPIC }}'
+        shell: bash # Ensure bash is used for conditional logic
+
