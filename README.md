@@ -10,6 +10,8 @@ I scheduled the cross-compiled rust binary to run on my android phone with https
 
 Could also be setup to alert you or run on linux/mac/windows/raspberry pi with another notification wrapper like https://github.com/nikoksr/notify or https://github.com/caronc/apprise
 
+![DeepWiki code explanation](https://deepwiki.com/barakplasma/israel-weather-rs)
+
 ## Help
 ```
 $ weather --help
