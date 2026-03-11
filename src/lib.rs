@@ -9,8 +9,18 @@ use serde_xml_rs::from_str;
 
 pub mod ims_structs;
 
-static WEATHER_URL: &str =
+static DEFAULT_WEATHER_URL: &str =
     "https://ims.gov.il/sites/default/files/ims_data/xml_files/isr_cities_1week_6hr_forecast.xml";
+
+fn weather_url() -> String {
+    std::env::var("WEATHER_URL").unwrap_or_else(|_| DEFAULT_WEATHER_URL.to_string())
+}
+
+fn cache_dir() -> std::path::PathBuf {
+    std::env::var("WEATHER_CACHE_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| std::env::temp_dir())
+}
 
 fn init_logging() {
     let _ = SubscriberBuilder::default()
@@ -23,25 +33,27 @@ fn init_logging() {
 
 fn make_cache(offline: bool) -> PathBuf {
     trace!("build cache offline={}", offline);
+    let url = weather_url();
+    let dir = cache_dir();
 
     let cache = Cache::builder()
-        .dir(std::env::temp_dir())
+        .dir(dir)
         .connect_timeout(std::time::Duration::from_secs(60))
         .timeout(std::time::Duration::from_secs(60))
         .offline(offline)
         .build()
         .expect("unable to start download cache");
 
-    match cache.cached_path(WEATHER_URL) {
+    match cache.cached_path(&url) {
         Ok(path) => path,
         Err(e) if !offline => {
             warn!("Download failed, falling back to cached data: {}", e);
             Cache::builder()
-                .dir(std::env::temp_dir())
+                .dir(cache_dir())
                 .offline(true)
                 .build()
                 .expect("unable to start offline cache")
-                .cached_path(WEATHER_URL)
+                .cached_path(&url)
                 .expect("cache creation failed - no previously cached data available")
         }
         Err(e) => panic!("cache creation failed: {}", e),

@@ -1,6 +1,6 @@
 [package]
 name = "israel-weather-rs"
-version = "0.3.2"
+version = "0.3.5"
 edition = "2021"
 rust-version = "1.83"
 description = "a utility to download the israeli weather forecast from ims.gov.il , save it to a cache, and allow recall at any point in the future from the cache as filtered by location and current time. meant for alerting the user to expected rain"
@@ -13,7 +13,7 @@ name = "weather"
 path = "src/main.rs"
 
 [package.metadata.binstall]
-pkg-url = "{ repo }/releases/download/v{ version }/weather-{ target }{ binary-ext }"
+pkg-url = "{ repo }/releases/download/{ version }/weather-{ target }{ binary-ext }"
 pkg-fmt = "bin"
 bin-dir = "{ bin }{ binary-ext }"
 
