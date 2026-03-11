@@ -20,20 +20,20 @@ jobs:
 
       - name: Get latest release asset
         # jq command https://play.jqlang.org/s/s0plyKVNy1fs_Wv
-        run: curl -s "https://api.github.com/repos/barakplasma/israel-weather-rs/releases/latest" | jq -r '.assets[] | select(.browser_download_url | contains("ubuntu")) | .browser_download_url' | xargs curl -LO
+        run: curl -s "https://api.github.com/repos/barakplasma/israel-weather-rs/releases/latest" | jq -r '.assets[] | select(.browser_download_url | contains("x86_64-unknown-linux-gnu")) | .browser_download_url' | xargs curl -LO
 
       - name: Make executable
-        run: chmod +x ./israel-weather-rs_ubuntu-latest
+        run: chmod +x ./weather-x86_64-unknown-linux-gnu
 
       - name: Get Weather
-        run: ./israel-weather-rs_ubuntu-latest -n 24 | tee weather.json
+        run: ./weather-x86_64-unknown-linux-gnu -n 24 | tee weather.json
 
       - uses: actions/upload-artifact@v4
         with:
           name: weather.json
           path: weather.json
           retention-days: 14
-      
+
       - name: Will it rain?
         run: echo "RAIN=$(jq "max_by(.Rain).Rain > 0" weather.json)" >> $GITHUB_ENV
 

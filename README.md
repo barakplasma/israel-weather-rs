@@ -52,11 +52,53 @@ Options:
 ```
 
 ## Installation
-Download from the latest release, or git clone and run cargo install
+
+### Option 1: cargo-binstall (downloads pre-built binary, no compilation)
+
+```sh
+cargo binstall israel-weather-rs
+```
+
+Install `cargo-binstall` first if you don't have it: `cargo install cargo-binstall`
+
+### Option 2: Download a pre-built binary manually (no Rust required)
+
+Grab the latest binary for your platform from the [releases page](https://github.com/barakplasma/israel-weather-rs/releases):
+
+| Platform | File |
+|---|---|
+| Linux x86_64 | `weather-x86_64-unknown-linux-gnu` |
+| macOS Apple Silicon | `weather-aarch64-apple-darwin` |
+| macOS Intel | `weather-x86_64-apple-darwin` |
+| Windows | `weather-x86_64-pc-windows-msvc.exe` |
+| Android / ARM (Termux) | `weather-aarch64-linux-android` |
+| ARM Linux (Pi etc.) | `weather-armv7-unknown-linux-gnueabihf` |
+
+Then make it executable and move it onto your PATH:
+```sh
+chmod +x weather-*
+mv weather-* ~/.local/bin/weather
+```
+
+### Option 3: Build and install with Cargo (compiles from source)
+
+```sh
+cargo install --git https://github.com/barakplasma/israel-weather-rs
+```
+
+The `weather` binary is installed to `~/.cargo/bin/` (make sure that's on your `$PATH`).
+
+### Option 4: Build from source
+
+```sh
+git clone https://github.com/barakplasma/israel-weather-rs
+cd israel-weather-rs
+cargo install --path .
+```
 
 ## Get Started with Dev
 1. Get rust via rustup
-1. cargo run
+1. `cargo run`
 1. profit
 
 Also check out the github action. im proud of the CI there.

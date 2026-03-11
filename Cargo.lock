@@ -909,7 +909,6 @@ dependencies = [
  "serde",
  "serde-xml-rs",
  "serde_json",
- "time",
  "tracing",
  "tracing-subscriber",
 ]
