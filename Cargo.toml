@@ -12,6 +12,11 @@ license = "MIT"
 name = "weather"
 path = "src/main.rs"
 
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/weather-{ target }{ binary-ext }"
+pkg-fmt = "bin"
+bin-dir = "{ bin }{ binary-ext }"
+
 [lints.rust]
 unsafe_code = "forbid"
 

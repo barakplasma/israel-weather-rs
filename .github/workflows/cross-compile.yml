@@ -5,7 +5,7 @@ on:
     types: [created]
 
   workflow_dispatch:
-  
+
 jobs:
   cross-compile:
     name: cross compile
@@ -18,12 +18,12 @@ jobs:
     - uses: actions-rust-lang/setup-rust-toolchain@v1
     - run: cargo install cross --git https://github.com/cross-rs/cross
     - run: cross build --release --target ${{matrix.target}}
-    - run: mv target/${{matrix.target}}/release/israel-weather-rs target/${{matrix.target}}/release/israel-weather-rs_${{matrix.target}}
+    - run: mv target/${{matrix.target}}/release/weather target/${{matrix.target}}/release/weather-${{matrix.target}}
     - name: Release
       uses: softprops/action-gh-release@v1
       with:
-        files: target/${{matrix.target}}/release/israel-weather-rs_${{matrix.target}}
+        files: target/${{matrix.target}}/release/weather-${{matrix.target}}
     - uses: actions/upload-artifact@v4
       with:
-        name: israel-weather-rs_${{matrix.target}}
-        path: target/${{matrix.target}}/release/israel-weather-rs_${{matrix.target}}
+        name: weather-${{matrix.target}}
+        path: target/${{matrix.target}}/release/weather-${{matrix.target}}
