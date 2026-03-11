@@ -96,6 +96,21 @@ cd israel-weather-rs
 cargo install --path .
 ```
 
+## Environment variables
+
+These override compiled-in defaults without requiring a rebuild:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `WEATHER_URL` | IMS forecast XML URL | Use a mirror or local file if the IMS URL changes |
+| `WEATHER_CACHE_DIR` | system temp dir | Change where the downloaded XML is cached |
+
+Example:
+```sh
+WEATHER_URL=https://mirror.example.com/forecast.xml weather -l "Haifa"
+WEATHER_CACHE_DIR=/var/cache/weather weather --offline
+```
+
 ## Get Started with Dev
 1. Get rust via rustup
 1. `cargo run`
