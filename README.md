@@ -1,3 +1,5 @@
+
+
 # israel-weather-rs
 [![E2E test every 6 hours](https://github.com/barakplasma/israel-weather-rs/actions/workflows/e2e_test.yml/badge.svg)](https://github.com/barakplasma/israel-weather-rs/actions/workflows/e2e_test.yml)
 [![Cross-Compile](https://github.com/barakplasma/israel-weather-rs/actions/workflows/cross-compile.yml/badge.svg)](https://github.com/barakplasma/israel-weather-rs/actions/workflows/cross-compile.yml)
@@ -19,7 +21,7 @@ Downloads and Caches Israeli weather forecast from https://ims.gov.il and prints
 Usage: weather [OPTIONS]
 
 Options:
-  -l, --location <LOCATION>  Location to check weather for [default: "Tel Aviv - Yafo"]
+  -l, --location <LOCATION>  Location to check weather for [default: "Tel Aviv Coast"]
   -n, --next <NEXT>          Check next n hours ahead [default: 6]
   -a, --all                  Ignore location and print all weather data
   -h, --help                 Print help
