@@ -20,6 +20,7 @@ use serde_json::{json, Map, Value};
 use super::codes::{is_day, wmo_code};
 use super::{resolve, round, ApiError, AppState, LocationQuery};
 use crate::hourly::HourlyPoint;
+use crate::ims_json::DailySummary;
 
 const MAX_FORECAST_DAYS: u32 = 16;
 const MAX_PAST_DAYS: u32 = 92;
@@ -173,6 +174,8 @@ enum HourlyVar {
     WindDirection,
     UvIndex,
     IsDay,
+    PrecipitationProbability,
+    WindGusts,
 }
 
 impl HourlyVar {
@@ -190,6 +193,8 @@ impl HourlyVar {
             "wind_direction_10m" | "winddirection_10m" => Self::WindDirection,
             "uv_index" => Self::UvIndex,
             "is_day" => Self::IsDay,
+            "precipitation_probability" => Self::PrecipitationProbability,
+            "wind_gusts_10m" | "windgusts_10m" => Self::WindGusts,
             _ => return None,
         })
     }
@@ -208,8 +213,9 @@ impl HourlyVar {
             }
             Self::ZeroPrecip => u.precip_unit(),
             Self::WeatherCode => "wmo code",
-            Self::WindSpeed => u.wind_unit(),
+            Self::WindSpeed | Self::WindGusts => u.wind_unit(),
             Self::WindDirection => "°",
+            Self::PrecipitationProbability => "%",
             Self::UvIndex | Self::IsDay => "",
         }
     }
@@ -229,6 +235,11 @@ impl HourlyVar {
                 .uv_index
                 .map_or(Value::Null, |v| json!(round(v as f64, 2))),
             Self::IsDay => json!(is_day(lat, lon, p.time_utc()) as u8),
+            // Only the IMS hourly JSON has these; null for interpolated XML hours.
+            Self::PrecipitationProbability => p
+                .precipitation_probability
+                .map_or(Value::Null, |v| json!(v.round() as i64)),
+            Self::WindGusts => p.wind_gust.map_or(Value::Null, |v| json!(u.wind(v))),
         }
     }
 }
@@ -245,6 +256,8 @@ enum DailyVar {
     WindSpeedMax,
     WindDirectionDominant,
     UvIndexMax,
+    PrecipitationProbabilityMax,
+    WindGustsMax,
 }
 
 impl DailyVar {
@@ -262,6 +275,8 @@ impl DailyVar {
                 Self::WindDirectionDominant
             }
             "uv_index_max" => Self::UvIndexMax,
+            "precipitation_probability_max" => Self::PrecipitationProbabilityMax,
+            "wind_gusts_10m_max" | "windgusts_10m_max" => Self::WindGustsMax,
             _ => return None,
         })
     }
@@ -274,21 +289,36 @@ impl DailyVar {
             Self::PrecipitationSum => u.precip_unit(),
             Self::PrecipitationHours => "h",
             Self::WeatherCode => "wmo code",
-            Self::WindSpeedMax => u.wind_unit(),
+            Self::WindSpeedMax | Self::WindGustsMax => u.wind_unit(),
             Self::WindDirectionDominant => "°",
+            Self::PrecipitationProbabilityMax => "%",
             Self::UvIndexMax => "",
         }
     }
 
-    fn value(self, day: &[&HourlyPoint], u: &Units) -> Value {
+    /// `ims` is IMS's own daily summary, passed only when the requested days are Israel days.
+    fn value(self, day: &[&HourlyPoint], ims: Option<&DailySummary>, u: &Units) -> Value {
         if day.is_empty() {
             return Value::Null;
         }
         let max = |f: fn(&HourlyPoint) -> f32| day.iter().map(|p| f(p)).fold(f32::MIN, f32::max);
         let min = |f: fn(&HourlyPoint) -> f32| day.iter().map(|p| f(p)).fold(f32::MAX, f32::min);
+        let max_opt =
+            |f: fn(&HourlyPoint) -> Option<f32>| day.iter().filter_map(|p| f(p)).reduce(f32::max);
         match self {
-            Self::TemperatureMax => json!(u.temp(max(|p| p.block_max_temp.max(p.temperature)))),
-            Self::TemperatureMin => json!(u.temp(min(|p| p.block_min_temp.min(p.temperature)))),
+            Self::TemperatureMax => json!(u.temp(
+                ims.and_then(|d| d.max_temp)
+                    .unwrap_or_else(|| max(|p| p.temperature))
+            )),
+            Self::TemperatureMin => json!(u.temp(
+                ims.and_then(|d| d.min_temp)
+                    .unwrap_or_else(|| min(|p| p.temperature))
+            )),
+            Self::PrecipitationProbabilityMax => max_opt(|p| p.precipitation_probability)
+                .map_or(Value::Null, |v| json!(v.round() as i64)),
+            Self::WindGustsMax => {
+                max_opt(|p| p.wind_gust).map_or(Value::Null, |v| json!(u.wind(v)))
+            }
             Self::ApparentMax => json!(u.temp(max(|p| p.feels_like))),
             Self::ApparentMin => json!(u.temp(min(|p| p.feels_like))),
             Self::PrecipitationSum => json!(u.precip(day.iter().map(|p| p.precipitation).sum())),
@@ -306,10 +336,9 @@ impl DailyVar {
                 });
                 json!(x.atan2(y).to_degrees().rem_euclid(360.0).round() as i64)
             }
-            Self::UvIndexMax => day
-                .iter()
-                .filter_map(|p| p.block_uv_index_max.or(p.uv_index))
-                .reduce(f32::max)
+            Self::UvIndexMax => ims
+                .and_then(|d| d.uv_index_max)
+                .or_else(|| max_opt(|p| p.uv_index_max.or(p.uv_index)))
                 .map_or(Value::Null, |v| json!(round(v as f64, 2))),
         }
     }
@@ -567,13 +596,21 @@ pub async fn forecast(
             "time".into(),
             days.iter().map(|d| fmt.day(*d)).collect::<Value>(),
         );
+        // IMS daily summaries are for Israel calendar days.
+        let israel_days = matches!(tz.name(), "Asia/Jerusalem" | "Asia/Tel_Aviv" | "Israel");
+        let ims_daily = |d: &NaiveDate| {
+            israel_days
+                .then(|| resolved.daily.iter().find(|s| s.date == *d))
+                .flatten()
+        };
         for (name, var) in &daily_vars {
             d_units.insert((*name).into(), json!(var.unit(&units)));
             daily.insert(
                 (*name).into(),
                 buckets
                     .iter()
-                    .map(|b| var.value(b, &units))
+                    .zip(&days)
+                    .map(|(b, d)| var.value(b, ims_daily(d), &units))
                     .collect::<Value>(),
             );
         }
@@ -588,10 +625,18 @@ pub async fn forecast(
 mod tests {
     use crate::server::test_support::*;
     use axum::http::StatusCode;
+    use serde_json::Value;
 
-    // 01:22 Israel time on 2025-03-09.
-    const NOW: &str = "2025-03-08T23:22:00Z";
     const TLV: &str = "latitude=32.08&longitude=34.78";
+
+    fn index_of(json: &Value, time: &str) -> usize {
+        json["hourly"]["time"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .position(|t| t == time)
+            .unwrap_or_else(|| panic!("{time} not in response"))
+    }
 
     #[tokio::test]
     async fn hourly_gmt_defaults() {
@@ -608,51 +653,49 @@ mod tests {
         assert_eq!(json["hourly_units"]["weather_code"], "wmo code");
         let time = json["hourly"]["time"].as_array().unwrap();
         assert_eq!(time.len(), 7 * 24);
-        // GMT day starts at 2025-03-08 00:00 UTC.
-        assert_eq!(time[0], "2025-03-08T00:00");
+        assert_eq!(time[0], "2026-09-30T00:00");
         let temps = json["hourly"]["temperature_2m"].as_array().unwrap();
         assert_eq!(temps.len(), time.len());
         assert!(temps[0].is_number());
     }
 
     #[tokio::test]
-    async fn hourly_values_follow_ims_blocks() {
+    async fn hourly_uses_real_ims_hours() {
         let (_, json) = get_json(
             state_at(NOW),
-            &format!("/v1/forecast?{TLV}&hourly=temperature_2m,precipitation&timezone=auto&forecast_days=1"),
+            &format!(
+                "/v1/forecast?{TLV}&timezone=auto&forecast_days=3\
+                 &hourly=precipitation,precipitation_probability,wind_gusts_10m"
+            ),
         )
         .await;
         assert_eq!(json["timezone"], "Asia/Jerusalem");
-        assert_eq!(json["timezone_abbreviation"], "IST");
-        assert_eq!(json["utc_offset_seconds"], 7200);
-        let time = json["hourly"]["time"].as_array().unwrap();
-        assert_eq!(time.len(), 24);
-        assert_eq!(time[0], "2025-03-09T00:00");
-        let rain: Vec<f64> = json["hourly"]["precipitation"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|v| v.as_f64().unwrap())
-            .collect();
-        let temps: Vec<f64> = json["hourly"]["temperature_2m"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|v| v.as_f64().unwrap())
-            .collect();
-        // Each hour of the 02:00-07:00 IMS block carries 1/6 of that block's rain.
-        let block = &crate::parse_forecast(FIXTURE).unwrap().location[1]
-            .location_data
-            .forecast
-            .iter()
-            .find(|f| f.forecast_time == "2025-03-09T02:00:00+02:00")
-            .unwrap()
-            .clone();
-        for (h, r) in rain.iter().enumerate().take(8).skip(2) {
-            assert!((r - (block.rain / 6.0) as f64).abs() < 0.01, "hour {h}");
-        }
-        // Block start hours carry the IMS temperature exactly.
-        assert_eq!(temps[2], crate::server::round(block.temperature as f64, 1));
+        assert_eq!(json["timezone_abbreviation"], "IDT");
+        assert_eq!(json["utc_offset_seconds"], 10800);
+        assert_eq!(json["hourly_units"]["precipitation_probability"], "%");
+        assert_eq!(json["hourly_units"]["wind_gusts_10m"], "km/h");
+        // Rain between two XML samples, only visible in the IMS hourly data.
+        let i = index_of(&json, "2026-10-02T11:00");
+        assert_eq!(json["hourly"]["precipitation"][i], 0.77);
+        assert_eq!(json["hourly"]["precipitation_probability"][i], 10);
+        assert_eq!(json["hourly"]["wind_gusts_10m"][i], 37.0);
+    }
+
+    #[tokio::test]
+    async fn xml_fallback_interpolates_and_nulls_json_only_fields() {
+        let (_, json) = get_json(
+            xml_state_at(NOW),
+            &format!(
+                "/v1/forecast?{TLV}&timezone=auto&forecast_days=3\
+                 &hourly=temperature_2m,precipitation,precipitation_probability"
+            ),
+        )
+        .await;
+        let i = index_of(&json, "2026-10-02T11:00");
+        // The XML samples at 09:00 and 15:00 are dry, so the rain at 11:00 is missed.
+        assert_eq!(json["hourly"]["precipitation"][i], 0.0);
+        assert!(json["hourly"]["precipitation_probability"][i].is_null());
+        assert!(json["hourly"]["temperature_2m"][i].is_number());
     }
 
     #[tokio::test]
@@ -674,23 +717,36 @@ mod tests {
             &format!(
                 "/v1/forecast?{TLV}&timezone=Asia/Jerusalem&current=temperature_2m,is_day\
                  &current_weather=true\
-                 &daily=temperature_2m_max,temperature_2m_min,precipitation_sum,weather_code,uv_index_max,wind_direction_10m_dominant"
+                 &daily=temperature_2m_max,temperature_2m_min,precipitation_sum,weather_code,\
+                 uv_index_max,wind_direction_10m_dominant,precipitation_probability_max,wind_gusts_10m_max"
             ),
         )
         .await;
         assert_eq!(status, StatusCode::OK, "{json}");
-        assert_eq!(json["current"]["time"], "2025-03-09T01:00");
+        assert_eq!(json["current"]["time"], "2026-09-30T21:00");
         assert_eq!(json["current"]["interval"], 3600);
         assert!(json["current"]["temperature_2m"].is_number());
         assert_eq!(json["current"]["is_day"], 0);
         assert!(json["current_weather"]["weathercode"].is_number());
         let daily = &json["daily"];
-        assert_eq!(daily["time"][0], "2025-03-09");
+        assert_eq!(daily["time"][0], "2026-09-30");
         assert_eq!(daily["time"].as_array().unwrap().len(), 7);
-        let max = daily["temperature_2m_max"][0].as_f64().unwrap();
-        let min = daily["temperature_2m_min"][0].as_f64().unwrap();
-        assert!(max >= min);
-        assert!(daily["weather_code"][0].is_number());
+        // IMS's own daily summary for Tel Aviv Coast on Oct 1: 22-28 °C, max UV 7.
+        assert_eq!(daily["temperature_2m_max"][1], 28.0);
+        assert_eq!(daily["temperature_2m_min"][1], 22.0);
+        assert_eq!(daily["uv_index_max"][1], 7.0);
+        assert!(daily["precipitation_probability_max"][2].as_i64().unwrap() >= 10);
+        assert!(daily["wind_gusts_10m_max"][2].as_f64().unwrap() >= 37.0);
+    }
+
+    #[tokio::test]
+    async fn daily_in_gmt_uses_hourly_values_not_israel_days() {
+        let (_, json) = get_json(
+            state_at(NOW),
+            &format!("/v1/forecast?{TLV}&daily=temperature_2m_max"),
+        )
+        .await;
+        assert!(json["daily"]["temperature_2m_max"][1].is_number());
     }
 
     #[tokio::test]
@@ -722,8 +778,8 @@ mod tests {
         )
         .await;
         assert_eq!(json["hourly_units"]["time"], "unixtime");
-        // 2025-03-08T00:00:00Z
-        assert_eq!(json["hourly"]["time"][0], 1741392000);
+        // 2026-09-30T00:00:00Z
+        assert_eq!(json["hourly"]["time"][0], 1790726400);
     }
 
     #[tokio::test]

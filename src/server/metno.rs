@@ -48,6 +48,11 @@ fn period(
     details: bool,
 ) -> Option<Value> {
     let covered = window.get(..hours)?;
+    // Only summarise a gap-free run of hours.
+    let span = covered[hours - 1].time - covered[0].time;
+    if span.num_hours() != hours as i64 - 1 {
+        return None;
+    }
     // Most significant weather in the period, using the WMO code as a severity ranking.
     let code = covered
         .iter()
@@ -64,15 +69,27 @@ fn period(
         if hours > 1 {
             let max = covered
                 .iter()
-                .map(|p| p.block_max_temp)
+                .map(|p| p.temperature)
                 .fold(f32::MIN, f32::max);
             let min = covered
                 .iter()
-                .map(|p| p.block_min_temp)
+                .map(|p| p.temperature)
                 .fold(f32::MAX, f32::min);
             d.insert("air_temperature_max".into(), json!(round(max as f64, 1)));
             d.insert("air_temperature_min".into(), json!(round(min as f64, 1)));
         }
+    }
+    // Only when IMS published a chance for every hour in the period.
+    if let Some(chances) = covered
+        .iter()
+        .map(|p| p.precipitation_probability)
+        .collect::<Option<Vec<f32>>>()
+    {
+        let max = chances.into_iter().fold(0.0, f32::max);
+        d.insert(
+            "probability_of_precipitation".into(),
+            json!(round(max as f64, 1)),
+        );
     }
     Some(json!({"summary": {"symbol_code": symbol}, "details": d}))
 }
@@ -97,6 +114,9 @@ fn step(window: &[HourlyPoint], lat: f64, lon: f64) -> Value {
         json!(round(p.wind_direction as f64, 1)),
     );
     instant.insert("wind_speed".into(), json!(kmh_to_ms(p.wind_speed)));
+    if let Some(gust) = p.wind_gust {
+        instant.insert("wind_speed_of_gust".into(), json!(kmh_to_ms(gust)));
+    }
     if let Some(uv) = p.uv_index {
         instant.insert(
             "ultraviolet_index_clear_sky".into(),
@@ -155,10 +175,12 @@ pub async fn compact(
                     "air_temperature_min": "celsius",
                     "dew_point_temperature": "celsius",
                     "precipitation_amount": "mm",
+                    "probability_of_precipitation": "%",
                     "relative_humidity": "%",
                     "ultraviolet_index_clear_sky": "1",
                     "wind_from_direction": "degrees",
                     "wind_speed": "m/s",
+                    "wind_speed_of_gust": "m/s",
                 },
             },
             "timeseries": timeseries,
@@ -183,9 +205,15 @@ pub async fn compact(
 mod tests {
     use crate::server::test_support::*;
     use axum::http::{header, StatusCode};
+    use serde_json::Value;
 
-    const NOW: &str = "2025-03-08T23:22:00Z";
     const URL: &str = "/weatherapi/locationforecast/2.0/compact?lat=32.08&lon=34.78";
+
+    fn step<'a>(ts: &'a [Value], time: &str) -> &'a Value {
+        ts.iter()
+            .find(|s| s["time"] == time)
+            .unwrap_or_else(|| panic!("{time} missing"))
+    }
 
     #[tokio::test]
     async fn geojson_shape() {
@@ -193,21 +221,54 @@ mod tests {
         assert_eq!(status, StatusCode::OK, "{body}");
         assert_eq!(
             headers[header::LAST_MODIFIED],
-            "Sat, 08 Mar 2025 23:22:00 GMT"
+            "Wed, 30 Sep 2026 18:45:00 GMT"
         );
-        let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+        let json: Value = serde_json::from_str(&body).unwrap();
         assert_eq!(json["type"], "Feature");
         assert_eq!(json["geometry"]["coordinates"][0], 34.7802);
         assert_eq!(json["properties"]["meta"]["units"]["wind_speed"], "m/s");
         let ts = json["properties"]["timeseries"].as_array().unwrap();
         // Starts at the current hour, in UTC.
-        assert_eq!(ts[0]["time"], "2025-03-08T23:00:00Z");
-        assert_eq!(ts[1]["time"], "2025-03-09T00:00:00Z");
+        assert_eq!(ts[0]["time"], "2026-09-30T18:00:00Z");
+        assert_eq!(ts[1]["time"], "2026-09-30T19:00:00Z");
         let d = &ts[0]["data"];
         assert!(d["instant"]["details"]["air_temperature"].is_number());
         assert!(d["next_1_hours"]["summary"]["symbol_code"].is_string());
         assert!(d["next_6_hours"]["details"]["air_temperature_max"].is_number());
         assert!(d["next_12_hours"]["summary"]["symbol_code"].is_string());
+    }
+
+    #[tokio::test]
+    async fn ims_hourly_fields() {
+        let (_, json) = get_json(state_at(NOW), URL).await;
+        let ts = json["properties"]["timeseries"].as_array().unwrap();
+        // 2026-10-02 11:00 Israel time = 08:00Z: 0.77 mm, 10% chance, gusts 37 km/h.
+        let s = step(ts, "2026-10-02T08:00:00Z");
+        assert_eq!(
+            s["data"]["next_1_hours"]["details"]["precipitation_amount"],
+            0.8
+        );
+        assert_eq!(
+            s["data"]["next_1_hours"]["details"]["probability_of_precipitation"],
+            10.0
+        );
+        assert_eq!(s["data"]["instant"]["details"]["wind_speed_of_gust"], 10.3);
+        // The 6 hours starting 06:00Z include that rain.
+        let six = &step(ts, "2026-10-02T06:00:00Z")["data"]["next_6_hours"]["details"];
+        assert!(six["precipitation_amount"].as_f64().unwrap() >= 0.8);
+        assert!(six["probability_of_precipitation"].as_f64().unwrap() >= 10.0);
+        assert!(six["air_temperature_max"].as_f64() >= six["air_temperature_min"].as_f64());
+    }
+
+    #[tokio::test]
+    async fn xml_fallback_has_no_probability_or_gusts() {
+        let (_, json) = get_json(xml_state_at(NOW), URL).await;
+        let ts = json["properties"]["timeseries"].as_array().unwrap();
+        let s = &ts[3]["data"];
+        assert!(s["next_1_hours"]["details"]
+            .get("probability_of_precipitation")
+            .is_none());
+        assert!(s["instant"]["details"].get("wind_speed_of_gust").is_none());
     }
 
     #[tokio::test]

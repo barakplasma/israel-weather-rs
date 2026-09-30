@@ -9,6 +9,7 @@ pub mod codes;
 mod metno;
 mod openmeteo;
 
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::sync::{Arc, RwLock};
@@ -17,13 +18,14 @@ use axum::http::{header, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use chrono_tz::Asia::Jerusalem;
 use cron::Schedule;
 use serde_json::json;
 use tracing::{error, info, warn};
 
-use crate::hourly::{expand_hourly, HourlyPoint};
+use crate::hourly::{expand_hourly, merge_hourly, HourlyPoint};
+use crate::ims_json::{self, CountryForecast, DailySummary, FullForecast, LocationRegion, Warning};
 use crate::ims_structs::{Location, LocationForecasts};
 
 /// Default refresh schedule: every hour at minute 7, Israel time.
@@ -35,26 +37,87 @@ const MAX_DISTANCE_KM: f64 = 100.0;
 
 pub type Clock = Arc<dyn Fn() -> DateTime<Utc> + Send + Sync>;
 
-/// One successfully parsed download of the IMS forecast.
+/// Data from the IMS website's JSON endpoints ([`crate::ims_json`]). Each part is optional,
+/// and a part whose refresh fails keeps its previous value.
+#[derive(Clone, Default)]
+pub struct Extras {
+    pub full: Option<Arc<FullForecast>>,
+    pub warnings: Option<Arc<Vec<Warning>>>,
+    pub regions: Option<Arc<HashMap<i16, LocationRegion>>>,
+    /// When `full` was last downloaded successfully.
+    pub full_fetched_at: Option<DateTime<Utc>>,
+}
+
+/// One refresh worth of forecast data.
 pub struct Snapshot {
+    /// The XML forecast: location metadata and 6-hourly samples.
     pub data: LocationForecasts,
-    /// Hourly expansion of each location, parallel to `data.location`.
+    /// Hourly rows for each location, parallel to `data.location`: IMS hourly JSON where
+    /// available, otherwise interpolated from the XML samples.
     pub hourly: Vec<Vec<HourlyPoint>>,
+    pub extras: Extras,
     pub fetched_at: DateTime<Utc>,
 }
 
 impl Snapshot {
     pub fn new(data: LocationForecasts, fetched_at: DateTime<Utc>) -> Self {
+        Self::with_extras(data, fetched_at, Extras::default())
+    }
+
+    pub fn with_extras(data: LocationForecasts, fetched_at: DateTime<Utc>, extras: Extras) -> Self {
         let hourly = data
             .location
             .iter()
-            .map(|l| expand_hourly(&l.location_data.forecast))
+            .map(|l| {
+                let base = expand_hourly(&l.location_data.forecast);
+                match extras
+                    .full
+                    .as_ref()
+                    .and_then(|f| f.locations.get(&l.location_meta_data.location_id))
+                {
+                    Some(json) => merge_hourly(base, &json.hourly),
+                    None => base,
+                }
+            })
             .collect();
         Self {
             data,
             hourly,
+            extras,
             fetched_at,
         }
+    }
+
+    fn daily(&self, lid: i16) -> &[DailySummary] {
+        self.extras
+            .full
+            .as_ref()
+            .and_then(|f| f.locations.get(&lid))
+            .map_or(&[], |l| &l.daily)
+    }
+
+    /// General-public warnings for the location that haven't expired by `now`.
+    pub fn warnings_for(&self, lid: i16, now: DateTime<Utc>) -> Vec<&Warning> {
+        let (Some(warnings), Some(region)) = (
+            self.extras.warnings.as_ref(),
+            self.extras.regions.as_ref().and_then(|r| r.get(&lid)),
+        ) else {
+            return vec![];
+        };
+        warnings
+            .iter()
+            .filter(|w| w.is_current_or_upcoming(now) && w.applies_to(region))
+            .collect()
+    }
+
+    /// The written country forecast for `date`, or the closest earlier one.
+    pub fn country_forecast(&self, date: NaiveDate) -> Option<&CountryForecast> {
+        let country = &self.extras.full.as_ref()?.country;
+        country
+            .iter()
+            .rev()
+            .find(|c| c.date <= date)
+            .or(country.first())
     }
 }
 
@@ -149,6 +212,8 @@ pub enum LocationQuery<'a> {
 pub struct Resolved<'a> {
     pub location: &'a Location,
     pub hourly: &'a [HourlyPoint],
+    /// IMS daily summaries (empty without the JSON source).
+    pub daily: &'a [DailySummary],
     /// Distance from the requested coordinates, if coordinates were given.
     pub distance_km: Option<f64>,
 }
@@ -187,6 +252,7 @@ pub fn resolve<'a>(snap: &'a Snapshot, query: LocationQuery) -> Result<Resolved<
     Ok(Resolved {
         location,
         hourly: &snap.hourly[index],
+        daily: snap.daily(location.location_meta_data.location_id),
         distance_km,
     })
 }
@@ -251,22 +317,99 @@ pub fn router(state: AppState) -> Router {
         .with_state(state)
 }
 
-/// Download (or fall back to the cached copy of) the forecast and publish it to `state`.
-pub async fn refresh(state: &AppState, offline: bool) {
-    let result =
-        tokio::task::spawn_blocking(move || crate::get_israeli_weather_forecast(offline)).await;
+/// What a refresh downloads.
+#[derive(Clone, Copy)]
+pub struct RefreshOptions {
+    /// Only use cached copies.
+    pub offline: bool,
+    /// Also fetch the IMS website JSON (hourly forecast, warnings).
+    pub ims_json: bool,
+}
+
+fn fetch_extras(offline: bool, prev: Extras, now: DateTime<Utc>) -> Extras {
+    fn ok_or_warn<T>(what: &str, r: Result<T, crate::Error>) -> Option<T> {
+        r.inspect_err(|e| warn!("{what} unavailable, keeping previous copy: {e}"))
+            .ok()
+    }
+    let full = ok_or_warn(
+        "IMS hourly forecast",
+        ims_json::fetch(
+            ims_json::FULL_FORECAST,
+            offline,
+            ims_json::parse_full_forecast,
+        ),
+    );
+    let metadata = ok_or_warn(
+        "IMS warnings metadata",
+        ims_json::fetch(ims_json::WARNINGS_METADATA, offline, |s| {
+            serde_json::from_str::<serde_json::Value>(s)?;
+            Ok(s.to_string())
+        }),
+    );
+    let warnings = ok_or_warn(
+        "IMS warnings",
+        ims_json::fetch(ims_json::WARNINGS, offline, |s| {
+            ims_json::parse_warnings(s, metadata.as_deref())
+        }),
+    );
+    let regions = ok_or_warn(
+        "IMS location regions",
+        ims_json::fetch(
+            ims_json::LOCATIONS_INFO,
+            offline,
+            ims_json::parse_location_regions,
+        ),
+    );
+    Extras {
+        full_fetched_at: if full.is_some() {
+            Some(now)
+        } else {
+            prev.full_fetched_at
+        },
+        full: full.map(Arc::new).or(prev.full),
+        warnings: warnings.map(Arc::new).or(prev.warnings),
+        regions: regions.map(Arc::new).or(prev.regions),
+    }
+}
+
+/// Download (or fall back to cached copies of) the forecast and publish it to `state`.
+/// If the XML fails but an earlier snapshot exists, it is rebuilt with any new JSON data.
+pub async fn refresh(state: &AppState, opts: RefreshOptions) {
+    let prev = state.snapshot();
+    let prev_extras = prev.as_ref().map(|s| s.extras.clone()).unwrap_or_default();
+    let now = state.now();
+    let result = tokio::task::spawn_blocking(move || {
+        let xml = crate::get_israeli_weather_forecast(opts.offline);
+        let extras = if opts.ims_json {
+            fetch_extras(opts.offline, prev_extras, now)
+        } else {
+            Extras::default()
+        };
+        (xml, extras)
+    })
+    .await;
     match result {
-        Ok(Ok(data)) => {
+        Ok((Ok(data), extras)) => {
             let locations = data.location.len();
-            state.set_snapshot(Snapshot::new(data, state.now()));
-            info!(locations, "forecast refreshed");
+            let hourly_json = extras.full.is_some();
+            state.set_snapshot(Snapshot::with_extras(data, now, extras));
+            info!(locations, hourly_json, "forecast refreshed");
         }
-        Ok(Err(e)) => warn!("forecast refresh failed, keeping previous data: {e}"),
+        Ok((Err(e), extras)) => {
+            warn!("forecast xml refresh failed, keeping previous data: {e}");
+            if let Some(prev) = prev {
+                state.set_snapshot(Snapshot::with_extras(
+                    prev.data.clone(),
+                    prev.fetched_at,
+                    extras,
+                ));
+            }
+        }
         Err(e) => error!("forecast refresh task panicked: {e}"),
     }
 }
 
-async fn run_scheduler(state: AppState, schedule: Schedule, offline: bool) {
+async fn run_scheduler(state: AppState, schedule: Schedule, opts: RefreshOptions) {
     loop {
         let Some(next) = schedule.upcoming(Jerusalem).next() else {
             warn!("cron schedule has no upcoming runs; stopping refreshes");
@@ -277,7 +420,7 @@ async fn run_scheduler(state: AppState, schedule: Schedule, offline: bool) {
         state.set_next_refresh(Some(next));
         let wait = (next - Utc::now()).to_std().unwrap_or_default();
         tokio::time::sleep(wait).await;
-        refresh(&state, offline).await;
+        refresh(&state, opts).await;
     }
 }
 
@@ -306,7 +449,7 @@ async fn shutdown_signal() {
 pub struct ServeOptions {
     pub listen: SocketAddr,
     pub schedule: String,
-    pub offline: bool,
+    pub refresh: RefreshOptions,
 }
 
 /// Run the server until SIGINT/SIGTERM.
@@ -314,11 +457,11 @@ pub async fn serve(opts: ServeOptions) -> Result<(), Box<dyn std::error::Error>>
     let schedule = parse_schedule(&opts.schedule)?;
     let state = AppState::new(&opts.schedule, Arc::new(Utc::now));
 
-    refresh(&state, opts.offline).await;
+    refresh(&state, opts.refresh).await;
     if state.snapshot().is_none() {
         warn!("no forecast available yet; serving 503 until the next successful refresh");
     }
-    tokio::spawn(run_scheduler(state.clone(), schedule, opts.offline));
+    tokio::spawn(run_scheduler(state.clone(), schedule, opts.refresh));
 
     let listener = tokio::net::TcpListener::bind(opts.listen).await?;
     eprintln!(
@@ -336,13 +479,45 @@ pub(crate) mod test_support {
     use super::*;
 
     pub const FIXTURE: &str = include_str!("../../isr_cities_1week_6hr_forecast.xml");
+    const FULL: &str = include_str!("../../tests/fixtures/ims_full_forecast_data.json");
+    const WARNINGS: &str = include_str!("../../tests/fixtures/ims_warnings.json");
+    const METADATA: &str = include_str!("../../tests/fixtures/ims_warnings_metadata.json");
+    const LOCATIONS: &str = include_str!("../../tests/fixtures/ims_locations_info.json");
 
-    /// State loaded with the bundled fixture and a clock frozen at `now`.
-    pub fn state_at(now: &str) -> AppState {
+    /// Just before the fixtures were downloaded: 21:45 Israel time.
+    pub const NOW: &str = "2026-09-30T18:45:00Z";
+
+    fn clock(now: &str) -> Clock {
         let now: DateTime<Utc> = DateTime::parse_from_rfc3339(now).unwrap().into();
-        let state = AppState::new(DEFAULT_SCHEDULE, Arc::new(move || now));
+        Arc::new(move || now)
+    }
+
+    pub fn fixture_extras() -> Extras {
+        Extras {
+            full: Some(Arc::new(ims_json::parse_full_forecast(FULL).unwrap())),
+            warnings: Some(Arc::new(
+                ims_json::parse_warnings(WARNINGS, Some(METADATA)).unwrap(),
+            )),
+            regions: Some(Arc::new(
+                ims_json::parse_location_regions(LOCATIONS).unwrap(),
+            )),
+            full_fetched_at: None,
+        }
+    }
+
+    /// XML fixture only (the fallback path), clock frozen at `now`.
+    pub fn xml_state_at(now: &str) -> AppState {
+        let state = AppState::new(DEFAULT_SCHEDULE, clock(now));
         let data = crate::parse_forecast(FIXTURE).unwrap();
-        state.set_snapshot(Snapshot::new(data, now));
+        state.set_snapshot(Snapshot::new(data, state.now()));
+        state
+    }
+
+    /// XML plus IMS JSON fixtures, clock frozen at `now`.
+    pub fn state_at(now: &str) -> AppState {
+        let state = AppState::new(DEFAULT_SCHEDULE, clock(now));
+        let data = crate::parse_forecast(FIXTURE).unwrap();
+        state.set_snapshot(Snapshot::with_extras(data, state.now(), fixture_extras()));
         state
     }
 
@@ -405,7 +580,7 @@ mod tests {
 
     #[tokio::test]
     async fn serves_index_html() {
-        let (status, headers, body) = request(state_at("2025-03-08T23:22:00Z"), "/").await;
+        let (status, headers, body) = request(state_at(NOW), "/").await;
         assert_eq!(status, StatusCode::OK);
         assert!(headers[header::CONTENT_TYPE]
             .to_str()
@@ -424,23 +599,78 @@ mod tests {
         let (status, json) = get_json(empty, "/api/locations").await;
         assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
         assert_eq!(json["error"], true);
-        assert_eq!(
-            request(state_at("2025-03-08T23:22:00Z"), "/healthz")
-                .await
-                .0,
-            StatusCode::OK
-        );
+        assert_eq!(request(state_at(NOW), "/healthz").await.0, StatusCode::OK);
     }
 
     #[tokio::test]
     async fn cors_header_on_api_responses() {
-        let (_, headers, _) = request(state_at("2025-03-08T23:22:00Z"), "/api/locations").await;
+        let (_, headers, _) = request(state_at(NOW), "/api/locations").await;
         assert_eq!(headers[header::ACCESS_CONTROL_ALLOW_ORIGIN], "*");
     }
 
     #[test]
+    fn snapshot_prefers_ims_hourly_rows() {
+        use crate::hourly::Source;
+        let snap = state_at(NOW).snapshot().unwrap();
+        let tlv = resolve(&snap, LocationQuery::Name("Tel Aviv Coast")).unwrap();
+        // The JSON fixture starts at 23:00 Israel time (20:00Z).
+        let start: DateTime<Utc> = DateTime::parse_from_rfc3339("2026-09-30T20:00:00Z")
+            .unwrap()
+            .into();
+        let next_week: Vec<_> = tlv
+            .hourly
+            .iter()
+            .filter(|p| p.time_utc() >= start && p.time_utc() < start + chrono::Duration::days(6))
+            .collect();
+        assert!(next_week.len() >= 6 * 24 - 1);
+        assert!(next_week.iter().all(|p| p.source == Source::Ims));
+        assert!(next_week
+            .iter()
+            .any(|p| p.precipitation_probability.is_some()));
+        assert!(!tlv.daily.is_empty());
+        // Locations without JSON rows fall back to interpolated XML.
+        let haifa = resolve(&snap, LocationQuery::Name("Haifa")).unwrap();
+        assert!(haifa
+            .hourly
+            .iter()
+            .any(|p| p.source == Source::Interpolated));
+        assert!(haifa.daily.is_empty());
+    }
+
+    #[test]
+    fn xml_only_snapshot_is_interpolated() {
+        use crate::hourly::Source;
+        let snap = xml_state_at(NOW).snapshot().unwrap();
+        let tlv = resolve(&snap, LocationQuery::Name("Tel Aviv Coast")).unwrap();
+        assert!(tlv.hourly.iter().any(|p| p.source == Source::Interpolated));
+        assert!(tlv.daily.is_empty());
+        assert!(snap.warnings_for(2, snap.fetched_at).is_empty());
+        assert!(snap
+            .country_forecast(NaiveDate::from_ymd_opt(2026, 10, 1).unwrap())
+            .is_none());
+    }
+
+    #[test]
+    fn warnings_and_country_forecast() {
+        let snap = state_at(NOW).snapshot().unwrap();
+        let now: DateTime<Utc> = DateTime::parse_from_rfc3339(NOW).unwrap().into();
+        // Tel Aviv - Yafo (84) is coastal: gets the sea swimming warning.
+        let w = snap.warnings_for(84, now);
+        assert!(w.iter().any(|w| w.warning_type.contains("Sea")));
+        // Jerusalem (1) is inland: no sea warnings.
+        assert!(snap
+            .warnings_for(1, now)
+            .iter()
+            .all(|w| !w.warning_type.contains("Sea")));
+        let c = snap
+            .country_forecast(NaiveDate::from_ymd_opt(2026, 10, 1).unwrap())
+            .unwrap();
+        assert!(!c.description.is_empty());
+    }
+
+    #[test]
     fn resolve_rejects_far_away_and_invalid_coordinates() {
-        let state = state_at("2025-03-08T23:22:00Z");
+        let state = state_at(NOW);
         let snap = state.snapshot().unwrap();
         // London
         let err = resolve(&snap, LocationQuery::Coords(51.5, -0.12))

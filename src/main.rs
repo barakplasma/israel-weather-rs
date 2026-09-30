@@ -54,6 +54,11 @@ struct ServeArgs {
     /// 5 fields ("7 * * * *") or 6 with seconds ("0 7 * * * *")
     #[arg(long, env = "WEATHER_SCHEDULE", default_value = israel_weather_rs::server::DEFAULT_SCHEDULE)]
     schedule: String,
+
+    /// Also use the IMS website's JSON: real hourly forecast (rain chance, gusts) and warnings.
+    /// The XML forecast is always fetched and used as the fallback
+    #[arg(long, env = "WEATHER_IMS_JSON", default_value_t = true, action = clap::ArgAction::Set)]
+    ims_json: bool,
 }
 
 #[cfg(feature = "server")]
@@ -67,7 +72,10 @@ fn serve(args: ServeArgs, offline: bool) -> Result<(), Box<dyn std::error::Error
             israel_weather_rs::server::ServeOptions {
                 listen: args.listen,
                 schedule: args.schedule,
-                offline,
+                refresh: israel_weather_rs::server::RefreshOptions {
+                    offline,
+                    ims_json: args.ims_json,
+                },
             },
         ))
 }

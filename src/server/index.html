@@ -45,6 +45,12 @@
   tr.rain td { background: var(--rain-bg); }
   .rainv { color: var(--rain); font-weight: 600; }
   .error { color: #dc2626; }
+  .warning { border-left: 6px solid var(--wcolor, #FFD700); }
+  .warning h3 { margin: 0 0 4px; font-size: 1rem; }
+  .warning p { margin: 4px 0 0; }
+  .country { margin: 12px 0 0; white-space: pre-line; }
+  .day h3 { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }
+  .day h3 .muted { font-weight: normal; }
   footer { font-size: .85rem; color: var(--muted); }
   footer code { font-size: .8rem; word-break: break-all; }
   footer a { color: var(--accent); }
@@ -62,6 +68,8 @@
 
   <p id="error" class="error" hidden></p>
 
+  <section id="warnings" aria-live="polite"></section>
+
   <section class="card" id="now-card" hidden>
     <div class="muted" id="where"></div>
     <div class="now">
@@ -70,10 +78,11 @@
       <div class="stats" id="now-stats"></div>
     </div>
     <div class="alert" id="rain-alert" hidden></div>
+    <p class="muted country" id="country" hidden></p>
   </section>
 
   <section class="card" id="chart-card" hidden>
-    <div class="muted">Next 48 hours: temperature (line) and rain (bars), hourly values interpolated from 6-hour blocks</div>
+    <div class="muted" id="chart-caption"></div>
     <div id="chart"></div>
   </section>
 
@@ -108,7 +117,7 @@ const ICONS = {
 };
 const NIGHT_ICONS = { 1250: "🌙", 1220: "☁️", 1300: "🌙", 1310: "🌙", 1580: "🌙", 1530: "🌧️" };
 const hourIn = (d) => Number(fmt({ hour: "numeric", hourCycle: "h23" }).format(d));
-/** Pick an icon for an IMS code; blocks starting 18:00-05:59 Israel time count as night. */
+/** Pick an icon for an IMS code; 18:00-05:59 Israel time counts as night. */
 const icon = (code, when) => {
   const h = when ? hourIn(when) : 12;
   const night = h < 6 || h >= 18;
@@ -148,61 +157,101 @@ async function loadStatus() {
     if (s.fetched_at) parts.push(`Forecast fetched ${fmt({ dateStyle: "medium", timeStyle: "short" }).format(new Date(s.fetched_at))}`);
     if (s.next_refresh) parts.push(`next refresh ${fmtHour.format(new Date(s.next_refresh))}`);
     parts.push(`schedule <code>${esc(s.schedule)}</code>`);
+    parts.push(s.sources && s.sources.ims_hourly ? "hourly IMS data" : "6-hourly XML only (interpolated)");
     $("#status").innerHTML = parts.join(" · ");
   } catch (e) {
     $("#status").textContent = e.message;
   }
 }
 
-function renderNow(loc, blocks, om) {
-  const cur = om.current || {};
-  const block = blocks[0];
+const fmtRange = (from, to) => {
+  const f = new Date(from), t = new Date(to);
+  const sameDay = dayKey.format(f) === dayKey.format(t);
+  return `${fmtDay.format(f)} ${fmtHour.format(f)} – ${sameDay ? "" : fmtDay.format(t) + " "}${fmtHour.format(t)}`;
+};
+
+function renderWarnings(warnings) {
+  $("#warnings").innerHTML = (warnings || []).map((w) => `
+    <div class="card warning" style="--wcolor:${esc(w.color || "#FFD700")}">
+      <h3>⚠️ ${esc(w.severity)}: ${esc(w.warning_type)}</h3>
+      <div class="muted">${esc(fmtRange(w.valid_from, w.valid_to))}</div>
+      <p>${esc(w.text)}</p>
+    </div>`).join("");
+}
+
+/** Pick a stat for the day: IMS's daily summary when present, else from the hourly rows. */
+function dayStats(rows, daily) {
+  const temps = rows.map((r) => r.temperature);
+  const chances = rows.map((r) => r.precipitation_probability).filter((c) => c != null);
+  return {
+    min: daily && daily.min_temp != null ? daily.min_temp : Math.min(...temps),
+    max: daily && daily.max_temp != null ? daily.max_temp : Math.max(...temps),
+    rain: rows.reduce((a, r) => a + r.precipitation, 0),
+    chance: chances.length ? Math.max(...chances) : null,
+  };
+}
+
+function renderNow(loc, data) {
+  const cur = data.hourly[0];
   $("#where").textContent = `${loc.name} · ${loc.latitude.toFixed(3)}, ${loc.longitude.toFixed(3)} · ${loc.elevation} m`;
-  $("#now-icon").textContent = block ? icon(block.WeatherCode, new Date()) : "";
-  $("#now-temp").textContent = cur.temperature_2m != null ? `${r1(cur.temperature_2m)}°` : "–";
+  if (!cur) { $("#now-card").hidden = true; return; }
+  const today = data.daily[0];
+  $("#now-icon").textContent = icon(cur.weather_code, new Date(cur.time));
+  $("#now-temp").textContent = `${r1(cur.temperature)}°`;
   const stat = (label, value) => `<div><span class="muted">${label}</span><b>${value}</b></div>`;
   $("#now-stats").innerHTML = [
-    stat("Conditions", esc(block ? block.WeatherCodeEnglish : "–")),
-    stat("Feels like", `${r1(cur.apparent_temperature)}°`),
-    stat("Humidity", `${r1(cur.relative_humidity_2m)}%`),
-    stat("Wind", `${r1(cur.wind_speed_10m)} km/h`),
-    block ? stat("Block min / max", `${r1(block.MinTemp)}° / ${r1(block.MaxTemp)}°`) : "",
+    stat("Conditions", esc(cur.weather)),
+    stat("Feels like", `${r1(cur.feels_like)}°`),
+    stat("Humidity", `${r1(cur.relative_humidity)}%`),
+    stat("Wind", `${r1(cur.wind_speed)} km/h${cur.wind_gust != null ? `, gusts ${r1(cur.wind_gust)}` : ""}`),
+    today ? stat("Today", `${r1(today.min_temp)}° – ${r1(today.max_temp)}°`) : "",
   ].join("");
 
-  const rainy = blocks.filter((b) => b.Rain > 0).slice(0, 1)[0];
+  const next48 = data.hourly.slice(0, 48);
+  const rainy = next48.find((r) => r.precipitation > 0);
+  const total = next48.reduce((a, r) => a + r.precipitation, 0);
+  const chances = next48.map((r) => r.precipitation_probability).filter((c) => c != null);
+  const maxChance = chances.length ? Math.max(...chances) : null;
   const alert = $("#rain-alert");
   if (rainy) {
-    const t = new Date(rainy.ForecastTime);
-    alert.textContent = `🌧️ Rain expected from ${fmtDay.format(t)} ${fmtHour.format(t)}: ${r1(rainy.Rain)} mm (${rainy.WeatherCodeEnglish})`;
+    const t = new Date(rainy.time);
+    alert.textContent = `🌧️ Rain expected from ${fmtDay.format(t)} ${fmtHour.format(t)}: ` +
+      `${r1(total)} mm over the next 48 hours${maxChance != null ? ` (up to ${maxChance}% chance)` : ""}`;
+    alert.hidden = false;
+  } else if (maxChance != null && maxChance >= 20) {
+    alert.textContent = `🌂 Up to ${maxChance}% chance of rain in the next 48 hours`;
     alert.hidden = false;
   } else {
-    alert.textContent = "";
     alert.hidden = true;
   }
+
+  const country = $("#country");
+  country.textContent = data.country_forecast ? `IMS: ${data.country_forecast.description}` : "";
+  country.hidden = !data.country_forecast;
   $("#now-card").hidden = false;
 }
 
-let lastOm = null;
-function renderChart(om) {
-  lastOm = om;
-  const h = om.hourly;
-  if (!h) return;
+let lastHourly = null;
+function renderChart(hourly) {
+  lastHourly = hourly;
+  const rows = hourly.slice(0, 48);
+  if (rows.length < 2) { $("#chart-card").hidden = true; return; }
   $("#chart-card").hidden = false;
-  const now = Date.now() / 1000 - 3600;
-  const idx = h.time.map((t, i) => [t, i]).filter(([t, i]) => t >= now && h.temperature_2m[i] != null).slice(0, 48).map(([, i]) => i);
-  if (idx.length < 2) { $("#chart-card").hidden = true; return; }
+  const interpolated = rows.some((r) => r.source === "interpolated");
+  $("#chart-caption").textContent = "Next 48 hours: temperature (line) and rain (bars)" +
+    (interpolated ? ". Some hours are interpolated from 6-hourly samples" : ", hourly IMS forecast");
 
   // Size the SVG to its container so labels stay readable on phones.
   const W = Math.max(320, Math.round($("#chart").clientWidth || 800));
   const H = W < 500 ? 180 : 220, P = { l: 34, r: 34, t: 12, b: 26 };
-  const temps = idx.map((i) => h.temperature_2m[i]);
-  const rain = idx.map((i) => h.precipitation[i] || 0);
+  const temps = rows.map((r) => r.temperature);
+  const rain = rows.map((r) => r.precipitation || 0);
   const tMin = Math.floor(Math.min(...temps) - 1), tMax = Math.ceil(Math.max(...temps) + 1);
   const rMax = Math.max(1, ...rain);
-  const x = (k) => P.l + (k / (idx.length - 1)) * (W - P.l - P.r);
+  const x = (k) => P.l + (k / (rows.length - 1)) * (W - P.l - P.r);
   const yT = (v) => P.t + (1 - (v - tMin) / (tMax - tMin)) * (H - P.t - P.b);
   const yR = (v) => (v / rMax) * (H - P.t - P.b);
-  const bw = (W - P.l - P.r) / idx.length;
+  const bw = (W - P.l - P.r) / rows.length;
 
   let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Temperature and rain for the next 48 hours">`;
   rain.forEach((v, k) => {
@@ -215,67 +264,75 @@ function renderChart(om) {
   svg += `<text x="${W - P.r + 6}" y="${P.t + 10}" font-size="11" fill="var(--rain)">${r1(rMax)}mm</text>`;
   const pts = temps.map((v, k) => `${x(k).toFixed(1)},${yT(v).toFixed(1)}`).join(" ");
   svg += `<polyline points="${pts}" fill="none" stroke="var(--warm)" stroke-width="2.5" stroke-linejoin="round"/>`;
-  idx.forEach((i, k) => {
-    const d = new Date(h.time[i] * 1000);
+  rows.forEach((r, k) => {
+    const d = new Date(r.time);
     const hour = hourIn(d);
     if (hour % (W < 500 ? 12 : 6) === 0) {
       svg += `<line x1="${x(k)}" x2="${x(k)}" y1="${H - P.b}" y2="${H - P.b + 4}" stroke="var(--muted)"/>`;
       svg += `<text x="${x(k)}" y="${H - 6}" text-anchor="middle" font-size="11" fill="var(--muted)">${hour === 0 ? fmt({ weekday: "short" }).format(d) : fmtHour.format(d)}</text>`;
     }
-    svg += `<circle cx="${x(k)}" cy="${yT(temps[k])}" r="6" fill="transparent"><title>${fmtHour.format(d)}: ${r1(temps[k])}°, ${r1(rain[k])} mm</title></circle>`;
+    const chance = r.precipitation_probability != null ? `, ${r.precipitation_probability}% chance` : "";
+    svg += `<circle cx="${x(k)}" cy="${yT(temps[k])}" r="6" fill="transparent"><title>${fmtHour.format(d)}: ${r1(temps[k])}°, ${r1(rain[k])} mm${chance}</title></circle>`;
   });
   svg += "</svg>";
   $("#chart").innerHTML = svg;
-  $("#chart-card").hidden = false;
 }
 
-function renderDays(blocks) {
+function renderDays(hourly, daily) {
   const groups = new Map();
-  for (const b of blocks) {
-    const d = new Date(b.ForecastTime);
+  for (const r of hourly) {
+    const d = new Date(r.time);
     const k = dayKey.format(d);
-    if (!groups.has(k)) groups.set(k, { label: fmtDay.format(d), rows: [] });
-    groups.get(k).rows.push(b);
+    if (!groups.has(k)) groups.set(k, { label: fmtDay.format(d), date: r.time.slice(0, 10), rows: [] });
+    groups.get(k).rows.push(r);
   }
-  $("#days").innerHTML = [...groups.values()].map((g) => `
+  const wet = (r) => r.precipitation > 0 || (r.precipitation_probability || 0) >= 20;
+  $("#days").innerHTML = [...groups.values()].map((g) => {
+    const st = dayStats(g.rows, daily.find((d) => d.date === g.date));
+    // The current hour, every 3rd hour, and any hour with rain or a real chance of it.
+    const shown = g.rows.filter((r) => r === hourly[0] || hourIn(new Date(r.time)) % 3 === 0 || wet(r));
+    return `
     <div class="card day">
-      <h3>${esc(g.label)}</h3>
-      <table>${g.rows.map((b) => `
-        <tr class="${b.Rain > 0 ? "rain" : ""}">
-          <td>${fmtHour.format(new Date(b.ForecastTime))}</td>
-          <td>${icon(b.WeatherCode, new Date(b.ForecastTime))}</td>
-          <td class="desc">${esc(b.WeatherCodeEnglish)}</td>
-          <td>${r1(b.MinTemp)}°–${r1(b.MaxTemp)}°</td>
-          <td class="${b.Rain > 0 ? "rainv" : "muted"}">${r1(b.Rain)} mm</td>
-          <td class="hide-sm muted">💨 ${r1(b.WindSpeed)} km/h</td>
-          <td class="hide-sm muted">💧 ${r1(b.RelativeHumidity)}%</td>
-          <td class="hide-sm muted">UV ${b.UvIndexMax ?? "–"}</td>
+      <h3>${esc(g.label)}
+        <span class="muted">${r1(st.min)}° – ${r1(st.max)}°</span>
+        <span class="${st.rain > 0 ? "rainv" : "muted"}">${r1(st.rain)} mm</span>
+        ${st.chance != null ? `<span class="muted">☔ ${st.chance}%</span>` : ""}
+      </h3>
+      <table>${shown.map((r) => `
+        <tr class="${wet(r) ? "rain" : ""}">
+          <td>${fmtHour.format(new Date(r.time))}</td>
+          <td>${icon(r.weather_code, new Date(r.time))}</td>
+          <td class="desc">${esc(r.weather)}</td>
+          <td>${r1(r.temperature)}°</td>
+          <td class="${r.precipitation > 0 ? "rainv" : "muted"}">${r1(r.precipitation)} mm</td>
+          <td class="muted">${r.precipitation_probability != null ? `☔ ${r.precipitation_probability}%` : ""}</td>
+          <td class="hide-sm muted">💨 ${r1(r.wind_speed)}${r.wind_gust != null ? `–${r1(r.wind_gust)}` : ""} km/h</td>
+          <td class="hide-sm muted">💧 ${r1(r.relative_humidity)}%</td>
         </tr>`).join("")}
       </table>
-    </div>`).join("");
+    </div>`;
+  }).join("");
 }
 
 async function show(query) {
   showError("");
   try {
-    const native = await getJSON(`/api/forecast?${query}`);
-    const loc = native.location;
+    const data = await getJSON(`/api/forecast?${query}`);
+    const loc = data.location;
     const coords = `latitude=${loc.latitude}&longitude=${loc.longitude}`;
-    const om = await getJSON(`/v1/forecast?${coords}&timeformat=unixtime&forecast_days=3` +
-      "&hourly=temperature_2m,precipitation" +
-      "&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m");
 
     $("#search").value = loc.name;
     store.set("location", loc.name);
     history.replaceState(null, "", `?location=${encodeURIComponent(loc.name)}`);
     document.title = `${loc.name} · Israel Weather`;
     $("#l-native").href = `/api/forecast?location=${encodeURIComponent(loc.name)}`;
-    $("#l-om").href = `/v1/forecast?${coords}&hourly=temperature_2m,precipitation&timezone=auto`;
+    $("#l-om").href = `/v1/forecast?${coords}&hourly=temperature_2m,precipitation,precipitation_probability&timezone=auto`;
     $("#l-met").href = `/weatherapi/locationforecast/2.0/compact?lat=${loc.latitude}&lon=${loc.longitude}`;
 
-    renderNow(loc, native.forecasts, om);
-    renderChart(om);
-    renderDays(native.forecasts);
+    renderWarnings(data.warnings);
+    renderNow(loc, data);
+    renderChart(data.hourly);
+    renderDays(data.hourly, data.daily || []);
   } catch (e) {
     showError(e.message);
   }
@@ -284,7 +341,7 @@ async function show(query) {
 let resizeTimer;
 addEventListener("resize", () => {
   clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(() => lastOm && renderChart(lastOm), 150);
+  resizeTimer = setTimeout(() => lastHourly && renderChart(lastHourly), 150);
 });
 
 let names = [];

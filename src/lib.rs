@@ -11,6 +11,7 @@ use chrono_tz::Asia::Jerusalem;
 use serde_xml_rs::from_str;
 
 pub mod hourly;
+pub mod ims_json;
 pub mod ims_structs;
 #[cfg(feature = "server")]
 pub mod server;
@@ -39,6 +40,10 @@ pub enum Error {
         query: String,
         available: Vec<String>,
     },
+    /// An HTTP request to IMS failed.
+    Http(reqwest::Error),
+    /// IMS JSON could not be parsed or had an unexpected shape.
+    Json(String),
 }
 
 impl fmt::Display for Error {
@@ -53,6 +58,8 @@ impl fmt::Display for Error {
                 "location {query:?} not found. Available locations: {}",
                 available.join(", ")
             ),
+            Error::Http(e) => write!(f, "request to IMS failed: {e}"),
+            Error::Json(e) => write!(f, "unexpected IMS json: {e}"),
         }
     }
 }
@@ -63,7 +70,8 @@ impl std::error::Error for Error {
             Error::Cache(e) => Some(e),
             Error::Io(e) => Some(e),
             Error::Xml(e) => Some(e),
-            Error::InvalidTime(_) | Error::LocationNotFound { .. } => None,
+            Error::Http(e) => Some(e),
+            Error::InvalidTime(_) | Error::LocationNotFound { .. } | Error::Json(_) => None,
         }
     }
 }
@@ -80,13 +88,25 @@ impl From<std::io::Error> for Error {
     }
 }
 
+impl From<reqwest::Error> for Error {
+    fn from(e: reqwest::Error) -> Self {
+        Error::Http(e)
+    }
+}
+
+impl From<serde_json::Error> for Error {
+    fn from(e: serde_json::Error) -> Self {
+        Error::Json(e.to_string())
+    }
+}
+
 impl From<serde_xml_rs::Error> for Error {
     fn from(e: serde_xml_rs::Error) -> Self {
         Error::Xml(e)
     }
 }
 
-fn non_empty_env(key: &str) -> Option<String> {
+pub(crate) fn non_empty_env(key: &str) -> Option<String> {
     std::env::var(key).ok().filter(|v| !v.trim().is_empty())
 }
 
@@ -94,7 +114,7 @@ fn weather_url() -> String {
     non_empty_env("WEATHER_URL").unwrap_or_else(|| DEFAULT_WEATHER_URL.to_string())
 }
 
-fn cache_dir() -> PathBuf {
+pub(crate) fn cache_dir() -> PathBuf {
     non_empty_env("WEATHER_CACHE_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(std::env::temp_dir)
@@ -169,7 +189,7 @@ fn notify_error(e: &serde_xml_rs::Error, xml: &str) {
 
 /// IMS publishes forecast times as Israel local wall-clock time without an offset.
 /// Interpret them in `Asia/Jerusalem` so they compare correctly against the current time.
-fn parse_time(time: &str) -> Result<DateTime<FixedOffset>, Error> {
+pub(crate) fn parse_time(time: &str) -> Result<DateTime<FixedOffset>, Error> {
     let naive = NaiveDateTime::parse_from_str(time.trim(), IMS_TIME_FORMAT)
         .map_err(|_| Error::InvalidTime(time.to_string()))?;
     let local = Jerusalem
@@ -374,26 +394,26 @@ mod tests {
         let english = forecasts.location[0].location_data.forecast[0]
             .weather_code_english
             .as_deref();
-        assert_eq!(english, Some("Cloudy, possible rain"));
+        assert_eq!(english, Some("Cloudy"));
     }
 
     #[test]
     fn transform_forecast_times_to_israel_local_rfc3339() {
         let forecasts = fixture();
         let time = &forecasts.location[0].location_data.forecast[0].forecast_time;
-        assert_eq!(time, "2025-03-07T02:00:00+02:00");
+        assert_eq!(time, "2026-09-29T03:00:00+03:00");
     }
 
     #[test]
     fn uv_index_is_parsed() {
         let forecasts = fixture();
-        let uv_max = forecasts.location[0]
-            .location_data
-            .forecast
+        let first = &forecasts.location[0].location_data.forecast;
+        let uv_max = first
             .iter()
-            .filter_map(|f| f.uv_index_max)
+            .filter_map(|f| f.uv_index)
             .fold(0.0_f32, f32::max);
-        assert!(uv_max > 0.0, "UVIndexMax should be read from the xml");
+        assert!(uv_max > 0.0, "UVIndex should be read from the xml");
+        assert_eq!(first[0].uv_index_max, Some(0.0));
     }
 
     #[test]
@@ -403,7 +423,7 @@ mod tests {
 
     #[test]
     fn parse_forecast_rejects_invalid_time() {
-        let xml = FIXTURE.replacen("2025-03-07 02:00:00", "yesterday", 1);
+        let xml = FIXTURE.replacen("2026-09-29 03:00:00", "yesterday", 1);
         assert!(matches!(parse_forecast(&xml), Err(Error::InvalidTime(_))));
     }
 
@@ -460,29 +480,29 @@ mod tests {
     fn test_forecasts_for_location_for_next_n_hours() {
         let forecasts = fixture();
         let location = find_location("Tel Aviv Coast", &forecasts).unwrap();
-        // 2025-03-08 23:22 UTC is 2025-03-09 01:22 in Israel.
+        // 18:45 UTC is 21:45 in Israel; samples are at 03, 09, 15 and 21 local.
         let next =
-            forecasts_for_location_for_next_n_hours(24, location, utc("2025-03-08T23:22:00+00:00"));
+            forecasts_for_location_for_next_n_hours(24, location, utc("2026-09-30T18:45:00+00:00"));
         assert_eq!(next.len(), 4);
-        assert_eq!(next[0].forecast_time, "2025-03-09T02:00:00+02:00");
+        assert_eq!(next[0].forecast_time, "2026-10-01T03:00:00+03:00");
     }
 
     #[test]
     fn next_n_hours_respects_israel_offset() {
         let forecasts = fixture();
         let location = find_location("Tel Aviv Coast", &forecasts).unwrap();
-        // 01:30 UTC is 03:30 in Israel, so the 02:00 local forecast is already in the past.
+        // 00:30 UTC is 03:30 in Israel, so the 03:00 local forecast is already in the past.
         let next =
-            forecasts_for_location_for_next_n_hours(6, location, utc("2025-03-09T01:30:00Z"));
+            forecasts_for_location_for_next_n_hours(6, location, utc("2026-10-01T00:30:00Z"));
         assert_eq!(next.len(), 1);
-        assert_eq!(next[0].forecast_time, "2025-03-09T08:00:00+02:00");
+        assert_eq!(next[0].forecast_time, "2026-10-01T09:00:00+03:00");
     }
 
     #[test]
     fn next_n_hours_rounds_up_to_whole_blocks() {
         let forecasts = fixture();
         let location = find_location("Tel Aviv Coast", &forecasts).unwrap();
-        let now = utc("2025-03-08T23:22:00Z");
+        let now = utc("2026-09-30T18:45:00Z");
         assert_eq!(
             forecasts_for_location_for_next_n_hours(0, location, now).len(),
             0
