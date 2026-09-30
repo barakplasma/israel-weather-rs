@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Israel Weather</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌦️</text></svg>">
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #fff; --fg: #1c2230; --muted: #667085; --border: #e3e6eb;
+    --accent: #2563eb; --rain: #0ea5e9; --rain-bg: #e0f2fe; --warm: #f97316;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1420; --card: #171e2d; --fg: #e6e9ef; --muted: #98a2b3; --border: #283349;
+      --accent: #60a5fa; --rain: #38bdf8; --rain-bg: #0c2a3d; --warm: #fb923c;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+         background: var(--bg); color: var(--fg); }
+  main { max-width: 880px; margin: 0 auto; padding: 16px; }
+  header { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 16px; }
+  h1 { font-size: 1.3rem; margin: 0 auto 0 0; }
+  input, button { font: inherit; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border);
+                  background: var(--card); color: var(--fg); }
+  input { min-width: 0; flex: 1 1 220px; max-width: 320px; }
+  button { cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+          padding: 16px; margin-bottom: 16px; }
+  .muted { color: var(--muted); font-size: .88rem; }
+  .now { display: flex; flex-wrap: wrap; gap: 16px 32px; align-items: center; }
+  .now .temp { font-size: 3rem; font-weight: 600; line-height: 1; }
+  .now .icon { font-size: 3rem; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 4px 16px; flex: 1; }
+  .stats b { display: block; font-size: 1.05rem; }
+  .alert { background: var(--rain-bg); color: var(--fg); border-left: 4px solid var(--rain);
+           padding: 10px 12px; border-radius: 8px; margin-top: 12px; }
+  svg { width: 100%; height: auto; display: block; }
+  .day h3 { margin: 0 0 8px; font-size: 1rem; }
+  table { width: 100%; border-collapse: collapse; }
+  td { padding: 6px 4px; border-top: 1px solid var(--border); white-space: nowrap; }
+  td.desc { white-space: normal; width: 100%; }
+  tr.rain td { background: var(--rain-bg); }
+  .rainv { color: var(--rain); font-weight: 600; }
+  .error { color: #dc2626; }
+  footer { font-size: .85rem; color: var(--muted); }
+  footer code { font-size: .8rem; word-break: break-all; }
+  footer a { color: var(--accent); }
+  @media (max-width: 560px) { .hide-sm { display: none; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>🌦️ Israel Weather</h1>
+    <input id="search" list="locations" placeholder="Search location…" autocomplete="off" aria-label="Location">
+    <datalist id="locations"></datalist>
+    <button id="near" title="Use my location">📍 Near me</button>
+  </header>
+
+  <p id="error" class="error" hidden></p>
+
+  <section class="card" id="now-card" hidden>
+    <div class="muted" id="where"></div>
+    <div class="now">
+      <div class="icon" id="now-icon"></div>
+      <div class="temp" id="now-temp"></div>
+      <div class="stats" id="now-stats"></div>
+    </div>
+    <div class="alert" id="rain-alert" hidden></div>
+  </section>
+
+  <section class="card" id="chart-card" hidden>
+    <div class="muted">Next 48 hours: temperature (line) and rain (bars), hourly values interpolated from 6-hour blocks</div>
+    <div id="chart"></div>
+  </section>
+
+  <section id="days"></section>
+
+  <footer class="card">
+    <div id="status">Loading…</div>
+    <p>Data: <a href="https://ims.gov.il">Israel Meteorological Service</a>. APIs served by this server:</p>
+    <ul>
+      <li>Native: <code><a id="l-native" href="/api/forecast?location=Tel%20Aviv%20Coast">/api/forecast?location=…</a></code>, <code><a href="/api/locations">/api/locations</a></code>, <code><a href="/api/status">/api/status</a></code></li>
+      <li>Open-Meteo: <code><a id="l-om" href="#">/v1/forecast?latitude=…&amp;longitude=…&amp;hourly=temperature_2m,precipitation</a></code></li>
+      <li>MET Norway: <code><a id="l-met" href="#">/weatherapi/locationforecast/2.0/compact?lat=…&amp;lon=…</a></code></li>
+    </ul>
+  </footer>
+</main>
+
+<script>
+"use strict";
+const TZ = "Asia/Jerusalem";
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fmt = (opts) => new Intl.DateTimeFormat(undefined, { timeZone: TZ, ...opts });
+const fmtHour = fmt({ hour: "2-digit", minute: "2-digit" });
+const fmtDay = fmt({ weekday: "long", day: "numeric", month: "short" });
+const dayKey = fmt({ year: "numeric", month: "2-digit", day: "2-digit" });
+
+const ICONS = {
+  1010: "🌪️", 1020: "⛈️", 1060: "🌨️", 1070: "🌨️", 1080: "🌨️", 1140: "🌧️", 1160: "🌫️",
+  1220: "⛅", 1230: "☁️", 1250: "☀️", 1260: "💨", 1270: "🥵", 1300: "🥶", 1310: "🔥",
+  1320: "🧊", 1510: "🌩️", 1520: "❄️", 1530: "🌦️", 1540: "🌦️", 1560: "🌧️", 1570: "🌫️",
+  1580: "🔥", 1590: "🥶",
+};
+const NIGHT_ICONS = { 1250: "🌙", 1220: "☁️", 1300: "🌙", 1310: "🌙", 1580: "🌙", 1530: "🌧️" };
+const hourIn = (d) => Number(fmt({ hour: "numeric", hourCycle: "h23" }).format(d));
+/** Pick an icon for an IMS code; blocks starting 18:00-05:59 Israel time count as night. */
+const icon = (code, when) => {
+  const h = when ? hourIn(when) : 12;
+  const night = h < 6 || h >= 18;
+  return (night && NIGHT_ICONS[code]) || ICONS[code] || "🌡️";
+};
+const r1 = (v) => (v == null ? "–" : Math.round(v * 10) / 10);
+
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch { /* ignore */ } },
+};
+
+async function getJSON(url) {
+  const res = await fetch(url);
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.reason || `${res.status} ${res.statusText}`);
+  return body;
+}
+
+function showError(msg) {
+  const el = $("#error");
+  el.textContent = msg || "";
+  el.hidden = !msg;
+}
+
+async function loadLocations() {
+  const list = await getJSON("/api/locations");
+  const names = list.map((l) => l.name).sort((a, b) => a.localeCompare(b));
+  $("#locations").innerHTML = names.map((n) => `<option value="${esc(n)}">`).join("");
+  return names;
+}
+
+async function loadStatus() {
+  try {
+    const s = await getJSON("/api/status");
+    const parts = [];
+    if (s.fetched_at) parts.push(`Forecast fetched ${fmt({ dateStyle: "medium", timeStyle: "short" }).format(new Date(s.fetched_at))}`);
+    if (s.next_refresh) parts.push(`next refresh ${fmtHour.format(new Date(s.next_refresh))}`);
+    parts.push(`schedule <code>${esc(s.schedule)}</code>`);
+    $("#status").innerHTML = parts.join(" · ");
+  } catch (e) {
+    $("#status").textContent = e.message;
+  }
+}
+
+function renderNow(loc, blocks, om) {
+  const cur = om.current || {};
+  const block = blocks[0];
+  $("#where").textContent = `${loc.name} · ${loc.latitude.toFixed(3)}, ${loc.longitude.toFixed(3)} · ${loc.elevation} m`;
+  $("#now-icon").textContent = block ? icon(block.WeatherCode, new Date()) : "";
+  $("#now-temp").textContent = cur.temperature_2m != null ? `${r1(cur.temperature_2m)}°` : "–";
+  const stat = (label, value) => `<div><span class="muted">${label}</span><b>${value}</b></div>`;
+  $("#now-stats").innerHTML = [
+    stat("Conditions", esc(block ? block.WeatherCodeEnglish : "–")),
+    stat("Feels like", `${r1(cur.apparent_temperature)}°`),
+    stat("Humidity", `${r1(cur.relative_humidity_2m)}%`),
+    stat("Wind", `${r1(cur.wind_speed_10m)} km/h`),
+    block ? stat("Block min / max", `${r1(block.MinTemp)}° / ${r1(block.MaxTemp)}°`) : "",
+  ].join("");
+
+  const rainy = blocks.filter((b) => b.Rain > 0).slice(0, 1)[0];
+  const alert = $("#rain-alert");
+  if (rainy) {
+    const t = new Date(rainy.ForecastTime);
+    alert.textContent = `🌧️ Rain expected from ${fmtDay.format(t)} ${fmtHour.format(t)}: ${r1(rainy.Rain)} mm (${rainy.WeatherCodeEnglish})`;
+    alert.hidden = false;
+  } else {
+    alert.textContent = "";
+    alert.hidden = true;
+  }
+  $("#now-card").hidden = false;
+}
+
+let lastOm = null;
+function renderChart(om) {
+  lastOm = om;
+  const h = om.hourly;
+  if (!h) return;
+  $("#chart-card").hidden = false;
+  const now = Date.now() / 1000 - 3600;
+  const idx = h.time.map((t, i) => [t, i]).filter(([t, i]) => t >= now && h.temperature_2m[i] != null).slice(0, 48).map(([, i]) => i);
+  if (idx.length < 2) { $("#chart-card").hidden = true; return; }
+
+  // Size the SVG to its container so labels stay readable on phones.
+  const W = Math.max(320, Math.round($("#chart").clientWidth || 800));
+  const H = W < 500 ? 180 : 220, P = { l: 34, r: 34, t: 12, b: 26 };
+  const temps = idx.map((i) => h.temperature_2m[i]);
+  const rain = idx.map((i) => h.precipitation[i] || 0);
+  const tMin = Math.floor(Math.min(...temps) - 1), tMax = Math.ceil(Math.max(...temps) + 1);
+  const rMax = Math.max(1, ...rain);
+  const x = (k) => P.l + (k / (idx.length - 1)) * (W - P.l - P.r);
+  const yT = (v) => P.t + (1 - (v - tMin) / (tMax - tMin)) * (H - P.t - P.b);
+  const yR = (v) => (v / rMax) * (H - P.t - P.b);
+  const bw = (W - P.l - P.r) / idx.length;
+
+  let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Temperature and rain for the next 48 hours">`;
+  rain.forEach((v, k) => {
+    if (v > 0) svg += `<rect x="${x(k) - bw / 2}" y="${H - P.b - yR(v)}" width="${bw * 0.9}" height="${yR(v)}" fill="var(--rain)" opacity=".6"><title>${r1(v)} mm</title></rect>`;
+  });
+  for (const v of [tMin, Math.round((tMin + tMax) / 2), tMax]) {
+    svg += `<line x1="${P.l}" x2="${W - P.r}" y1="${yT(v)}" y2="${yT(v)}" stroke="var(--border)"/>`;
+    svg += `<text x="${P.l - 6}" y="${yT(v) + 4}" text-anchor="end" font-size="11" fill="var(--muted)">${v}°</text>`;
+  }
+  svg += `<text x="${W - P.r + 6}" y="${P.t + 10}" font-size="11" fill="var(--rain)">${r1(rMax)}mm</text>`;
+  const pts = temps.map((v, k) => `${x(k).toFixed(1)},${yT(v).toFixed(1)}`).join(" ");
+  svg += `<polyline points="${pts}" fill="none" stroke="var(--warm)" stroke-width="2.5" stroke-linejoin="round"/>`;
+  idx.forEach((i, k) => {
+    const d = new Date(h.time[i] * 1000);
+    const hour = hourIn(d);
+    if (hour % (W < 500 ? 12 : 6) === 0) {
+      svg += `<line x1="${x(k)}" x2="${x(k)}" y1="${H - P.b}" y2="${H - P.b + 4}" stroke="var(--muted)"/>`;
+      svg += `<text x="${x(k)}" y="${H - 6}" text-anchor="middle" font-size="11" fill="var(--muted)">${hour === 0 ? fmt({ weekday: "short" }).format(d) : fmtHour.format(d)}</text>`;
+    }
+    svg += `<circle cx="${x(k)}" cy="${yT(temps[k])}" r="6" fill="transparent"><title>${fmtHour.format(d)}: ${r1(temps[k])}°, ${r1(rain[k])} mm</title></circle>`;
+  });
+  svg += "</svg>";
+  $("#chart").innerHTML = svg;
+  $("#chart-card").hidden = false;
+}
+
+function renderDays(blocks) {
+  const groups = new Map();
+  for (const b of blocks) {
+    const d = new Date(b.ForecastTime);
+    const k = dayKey.format(d);
+    if (!groups.has(k)) groups.set(k, { label: fmtDay.format(d), rows: [] });
+    groups.get(k).rows.push(b);
+  }
+  $("#days").innerHTML = [...groups.values()].map((g) => `
+    <div class="card day">
+      <h3>${esc(g.label)}</h3>
+      <table>${g.rows.map((b) => `
+        <tr class="${b.Rain > 0 ? "rain" : ""}">
+          <td>${fmtHour.format(new Date(b.ForecastTime))}</td>
+          <td>${icon(b.WeatherCode, new Date(b.ForecastTime))}</td>
+          <td class="desc">${esc(b.WeatherCodeEnglish)}</td>
+          <td>${r1(b.MinTemp)}°–${r1(b.MaxTemp)}°</td>
+          <td class="${b.Rain > 0 ? "rainv" : "muted"}">${r1(b.Rain)} mm</td>
+          <td class="hide-sm muted">💨 ${r1(b.WindSpeed)} km/h</td>
+          <td class="hide-sm muted">💧 ${r1(b.RelativeHumidity)}%</td>
+          <td class="hide-sm muted">UV ${b.UvIndexMax ?? "–"}</td>
+        </tr>`).join("")}
+      </table>
+    </div>`).join("");
+}
+
+async function show(query) {
+  showError("");
+  try {
+    const native = await getJSON(`/api/forecast?${query}`);
+    const loc = native.location;
+    const coords = `latitude=${loc.latitude}&longitude=${loc.longitude}`;
+    const om = await getJSON(`/v1/forecast?${coords}&timeformat=unixtime&forecast_days=3` +
+      "&hourly=temperature_2m,precipitation" +
+      "&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m");
+
+    $("#search").value = loc.name;
+    store.set("location", loc.name);
+    history.replaceState(null, "", `?location=${encodeURIComponent(loc.name)}`);
+    document.title = `${loc.name} · Israel Weather`;
+    $("#l-native").href = `/api/forecast?location=${encodeURIComponent(loc.name)}`;
+    $("#l-om").href = `/v1/forecast?${coords}&hourly=temperature_2m,precipitation&timezone=auto`;
+    $("#l-met").href = `/weatherapi/locationforecast/2.0/compact?lat=${loc.latitude}&lon=${loc.longitude}`;
+
+    renderNow(loc, native.forecasts, om);
+    renderChart(om);
+    renderDays(native.forecasts);
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+let resizeTimer;
+addEventListener("resize", () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => lastOm && renderChart(lastOm), 150);
+});
+
+let names = [];
+$("#search").addEventListener("change", (e) => {
+  const v = e.target.value.trim();
+  const match = names.find((n) => n.toLowerCase() === v.toLowerCase());
+  if (match) show(`location=${encodeURIComponent(match)}`);
+  else if (v) showError(`Unknown location "${v}". Pick one from the list.`);
+});
+$("#near").addEventListener("click", () => {
+  if (!navigator.geolocation) return showError("Geolocation is not available in this browser.");
+  navigator.geolocation.getCurrentPosition(
+    (p) => show(`lat=${p.coords.latitude}&lon=${p.coords.longitude}`),
+    (err) => showError(`Could not get your location: ${err.message}`),
+    { maximumAge: 600000, timeout: 10000 },
+  );
+});
+
+(async () => {
+  loadStatus();
+  try {
+    names = await loadLocations();
+  } catch (e) {
+    showError(e.message);
+    return;
+  }
+  const initial = new URLSearchParams(location.search).get("location") || store.get("location") || "Tel Aviv Coast";
+  show(`location=${encodeURIComponent(initial)}`);
+})();
+</script>
+</body>
+</html>

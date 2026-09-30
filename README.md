@@ -100,6 +100,52 @@ cd israel-weather-rs
 cargo install --path .
 ```
 
+## Web server (optional)
+
+Build with the `server` feature to get `weather serve`. It refreshes the IMS forecast on a cron schedule and serves a web UI plus weather APIs that existing clients already speak. Pre-built binaries are published as `weather-server-<target>` on the releases page.
+
+```sh
+cargo install --git https://github.com/barakplasma/israel-weather-rs --features server
+weather serve --listen 0.0.0.0:8080 --schedule "7 * * * *"
+# open http://localhost:8080
+```
+
+```mermaid
+flowchart LR
+  IMS[(ims.gov.il XML)] -->|cron refresh| Cache[on-disk cache]
+  Cache --> Parse[parse + Asia/Jerusalem times]
+  Parse --> Snap[in-memory snapshot<br/>6h blocks + hourly expansion]
+  Snap --> UI["/ web UI"]
+  Snap --> Native["/api/forecast, /api/locations, /api/status"]
+  Snap --> OM["/v1/forecast<br/>Open-Meteo compatible"]
+  Snap --> MET["/weatherapi/locationforecast/2.0/compact<br/>MET Norway compatible"]
+```
+
+| Endpoint | Compatible with | Notes |
+|---|---|---|
+| `/` | | Web UI: search locations, "near me", 48h chart, 6h blocks by day |
+| `/api/forecast?location=Haifa` or `?lat=..&lon=..` | | Native IMS 6-hour blocks from the current block on. Optional `hours=` |
+| `/api/locations`, `/api/status`, `/healthz` | | Location list, refresh status, health check (503 until data is loaded) |
+| `/v1/forecast?latitude=..&longitude=..` | [Open-Meteo](https://open-meteo.com/en/docs) | `hourly`, `daily`, `current`, `current_weather`, `timezone` (`GMT`, `auto`, IANA), `timeformat`, `forecast_days`, `past_days`, temperature/wind/precipitation units |
+| `/weatherapi/locationforecast/2.0/compact?lat=..&lon=..` (and `/complete`) | [MET Norway](https://api.met.no/weatherapi/locationforecast/2.0/documentation) | GeoJSON `timeseries` with `instant`, `next_1_hours`, `next_6_hours`, `next_12_hours`. Sends `Last-Modified`/`Expires` |
+
+How IMS data is adapted:
+- Coordinates resolve to the **nearest IMS location**. Requests more than 100 km from any IMS location get a 400.
+- IMS publishes **6-hour blocks**. For the hourly APIs, instantaneous values (temperature, humidity, wind...) are **linearly interpolated** between blocks, and each block's rain is **spread evenly** across its hours, so totals are preserved. The weather code is taken from the enclosing block.
+- IMS weather codes are mapped to [WMO codes](https://open-meteo.com/en/docs#weather_variable_documentation) (Open-Meteo) and MET `symbol_code`s, using day/night variants from the sun's position.
+- Fields IMS doesn't provide (pressure, cloud cover, precipitation probability...) are omitted. Hours outside the forecast range are `null` in Open-Meteo responses.
+- Wind speed from IMS is treated as km/h. MET responses convert it to m/s.
+
+Server settings (flags or env vars):
+
+| Flag | Env | Default |
+|---|---|---|
+| `--listen` | `WEATHER_LISTEN` | `127.0.0.1:8080` |
+| `--schedule` | `WEATHER_SCHEDULE` | `0 7 * * * *` (hourly at :07, Israel time; 5 or 6 field cron) |
+| `--offline` | | only use the cached XML |
+
+`WEATHER_URL`, `WEATHER_CACHE_DIR` and `RUST_LOG` (default `info` for the server) apply as well. The server shuts down cleanly on SIGTERM, so it works fine as a Kubernetes Deployment with `/healthz` as its probe.
+
 ## Environment variables
 
 These override compiled-in defaults without requiring a rebuild:
@@ -119,7 +165,8 @@ WEATHER_CACHE_DIR=/var/cache/weather weather --offline
 ## Get Started with Dev
 1. Get rust via rustup
 1. `cargo run`
-1. `cargo test` (offline, uses the bundled `isr_cities_1week_6hr_forecast.xml` fixture)
+1. `cargo test --all-features` (offline, uses the bundled `isr_cities_1week_6hr_forecast.xml` fixture)
+1. `cargo run --features server -- serve` for the web server
 1. `cargo test -- --ignored` (network tests that hit ims.gov.il)
 1. profit
 

@@ -10,7 +10,10 @@ use chrono::{DateTime, FixedOffset, NaiveDateTime, TimeZone, Utc};
 use chrono_tz::Asia::Jerusalem;
 use serde_xml_rs::from_str;
 
+pub mod hourly;
 pub mod ims_structs;
+#[cfg(feature = "server")]
+pub mod server;
 
 static DEFAULT_WEATHER_URL: &str =
     "https://ims.gov.il/sites/default/files/ims_data/xml_files/isr_cities_1week_6hr_forecast.xml";
@@ -99,7 +102,13 @@ fn cache_dir() -> PathBuf {
 
 /// Log JSON to stderr. Level defaults to `warn` and can be overridden with `RUST_LOG`.
 pub fn init_logging() {
-    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn"));
+    init_logging_with_default("warn");
+}
+
+/// Like [`init_logging`], with a custom default filter used when `RUST_LOG` is unset.
+pub fn init_logging_with_default(default_filter: &str) {
+    let filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_filter));
     let _ = tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
         .with_span_events(FmtSpan::CLOSE)
@@ -251,6 +260,34 @@ pub fn find_location<'a>(
                 .map(String::from)
                 .collect(),
         })
+}
+
+/// Great-circle distance in km between two WGS84 points.
+pub fn haversine_km(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
+    const EARTH_RADIUS_KM: f64 = 6371.0;
+    let (dlat, dlon) = ((lat2 - lat1).to_radians(), (lon2 - lon1).to_radians());
+    let a = (dlat / 2.0).sin().powi(2)
+        + lat1.to_radians().cos() * lat2.to_radians().cos() * (dlon / 2.0).sin().powi(2);
+    2.0 * EARTH_RADIUS_KM * a.sqrt().asin()
+}
+
+/// The IMS location closest to `(lat, lon)` and its distance in km.
+pub fn nearest_location(
+    lat: f64,
+    lon: f64,
+    weather_data: &ims_structs::LocationForecasts,
+) -> Option<(&ims_structs::Location, f64)> {
+    weather_data
+        .location
+        .iter()
+        .map(|l| {
+            let m = &l.location_meta_data;
+            (
+                l,
+                haversine_km(lat, lon, m.display_lat as f64, m.display_lon as f64),
+            )
+        })
+        .min_by(|a, b| a.1.total_cmp(&b.1))
 }
 
 /// Forecasts starting after `now`, enough 6 hour blocks to cover the next `next` hours.
@@ -467,6 +504,30 @@ mod tests {
         let next =
             forecasts_for_location_for_next_n_hours(24, location, utc("2030-01-01T00:00:00Z"));
         assert!(next.is_empty());
+    }
+
+    #[test]
+    fn haversine_known_distance() {
+        // Tel Aviv Coast -> Jerusalem is roughly 54 km.
+        let d = haversine_km(32.0821, 34.7802, 31.778, 35.2);
+        assert!((50.0..58.0).contains(&d), "{d}");
+        assert_eq!(haversine_km(31.0, 35.0, 31.0, 35.0), 0.0);
+    }
+
+    #[test]
+    fn nearest_location_picks_closest() {
+        let forecasts = fixture();
+        let (loc, d) = nearest_location(32.08, 34.78, &forecasts).unwrap();
+        assert_eq!(loc.location_meta_data.location_name_eng, "Tel Aviv Coast");
+        assert!(d < 1.0);
+        let (loc, _) = nearest_location(29.55, 34.95, &forecasts).unwrap();
+        assert_eq!(loc.location_meta_data.location_name_eng, "Eilat");
+    }
+
+    #[test]
+    fn nearest_location_empty() {
+        let empty = ims_structs::LocationForecasts { location: vec![] };
+        assert!(nearest_location(0.0, 0.0, &empty).is_none());
     }
 
     #[test]
