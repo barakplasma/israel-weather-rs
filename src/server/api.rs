@@ -1,12 +1,12 @@
 //! Native JSON API used by the embedded web UI.
 
-use axum::extract::{Query, State};
 use axum::Json;
+use axum::extract::{Query, State};
 use chrono::{DateTime, Duration};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
-use super::{resolve, round, ApiError, AppState, LocationQuery};
+use super::{ApiError, AppState, LocationQuery, resolve, round};
 use crate::hourly::HourlyPoint;
 use crate::ims_structs::{Forecast, Location};
 
@@ -112,7 +112,7 @@ pub async fn forecast(
         _ => {
             return Err(ApiError::bad_request(
                 "pass either `location=<name>` or both `lat` and `lon`",
-            ))
+            ));
         }
     };
     let resolved = resolve(&snap, query)?;

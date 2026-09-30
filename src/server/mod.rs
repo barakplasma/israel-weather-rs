@@ -14,7 +14,7 @@ use std::net::SocketAddr;
 use std::str::FromStr;
 use std::sync::{Arc, RwLock};
 
-use axum::http::{header, HeaderValue, StatusCode};
+use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
@@ -24,7 +24,7 @@ use cron::Schedule;
 use serde_json::json;
 use tracing::{error, info, warn};
 
-use crate::hourly::{expand_hourly, merge_hourly, HourlyPoint};
+use crate::hourly::{HourlyPoint, expand_hourly, merge_hourly};
 use crate::ims_json::{self, CountryForecast, DailySummary, FullForecast, LocationRegion, Warning};
 use crate::ims_structs::{Location, LocationForecasts};
 
@@ -582,10 +582,12 @@ mod tests {
     async fn serves_index_html() {
         let (status, headers, body) = request(state_at(NOW), "/").await;
         assert_eq!(status, StatusCode::OK);
-        assert!(headers[header::CONTENT_TYPE]
-            .to_str()
-            .unwrap()
-            .starts_with("text/html"));
+        assert!(
+            headers[header::CONTENT_TYPE]
+                .to_str()
+                .unwrap()
+                .starts_with("text/html")
+        );
         assert!(body.contains("<title>"));
     }
 
@@ -624,16 +626,20 @@ mod tests {
             .collect();
         assert!(next_week.len() >= 6 * 24 - 1);
         assert!(next_week.iter().all(|p| p.source == Source::Ims));
-        assert!(next_week
-            .iter()
-            .any(|p| p.precipitation_probability.is_some()));
+        assert!(
+            next_week
+                .iter()
+                .any(|p| p.precipitation_probability.is_some())
+        );
         assert!(!tlv.daily.is_empty());
         // Locations without JSON rows fall back to interpolated XML.
         let haifa = resolve(&snap, LocationQuery::Name("Haifa")).unwrap();
-        assert!(haifa
-            .hourly
-            .iter()
-            .any(|p| p.source == Source::Interpolated));
+        assert!(
+            haifa
+                .hourly
+                .iter()
+                .any(|p| p.source == Source::Interpolated)
+        );
         assert!(haifa.daily.is_empty());
     }
 
@@ -645,9 +651,10 @@ mod tests {
         assert!(tlv.hourly.iter().any(|p| p.source == Source::Interpolated));
         assert!(tlv.daily.is_empty());
         assert!(snap.warnings_for(2, snap.fetched_at).is_empty());
-        assert!(snap
-            .country_forecast(NaiveDate::from_ymd_opt(2026, 10, 1).unwrap())
-            .is_none());
+        assert!(
+            snap.country_forecast(NaiveDate::from_ymd_opt(2026, 10, 1).unwrap())
+                .is_none()
+        );
     }
 
     #[test]
@@ -658,10 +665,11 @@ mod tests {
         let w = snap.warnings_for(84, now);
         assert!(w.iter().any(|w| w.warning_type.contains("Sea")));
         // Jerusalem (1) is inland: no sea warnings.
-        assert!(snap
-            .warnings_for(1, now)
-            .iter()
-            .all(|w| !w.warning_type.contains("Sea")));
+        assert!(
+            snap.warnings_for(1, now)
+                .iter()
+                .all(|w| !w.warning_type.contains("Sea"))
+        );
         let c = snap
             .country_forecast(NaiveDate::from_ymd_opt(2026, 10, 1).unwrap())
             .unwrap();

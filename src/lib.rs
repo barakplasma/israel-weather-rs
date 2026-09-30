@@ -2,8 +2,8 @@ use std::fmt;
 use std::path::PathBuf;
 use std::time::Duration;
 use tracing::{error, instrument, trace, warn};
-use tracing_subscriber::fmt::format::FmtSpan;
 use tracing_subscriber::EnvFilter;
+use tracing_subscriber::fmt::format::FmtSpan;
 
 use cached_path::Cache;
 use chrono::{DateTime, FixedOffset, NaiveDateTime, TimeZone, Utc};

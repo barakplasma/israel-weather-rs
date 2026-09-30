@@ -6,16 +6,16 @@
 //! whole period. Fields IMS does not provide (air pressure, cloud cover, ...) are omitted.
 //! `/complete` returns the same document as `/compact`.
 
-use axum::extract::{Query, State};
-use axum::http::{header, HeaderMap, HeaderValue};
-use axum::response::IntoResponse;
 use axum::Json;
+use axum::extract::{Query, State};
+use axum::http::{HeaderMap, HeaderValue, header};
+use axum::response::IntoResponse;
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde::Deserialize;
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 
 use super::codes::{is_day, metno_symbol, wmo_code};
-use super::{resolve, round, ApiError, AppState, LocationQuery};
+use super::{ApiError, AppState, LocationQuery, resolve, round};
 use crate::hourly::HourlyPoint;
 
 #[derive(Deserialize)]
@@ -204,7 +204,7 @@ pub async fn compact(
 #[cfg(test)]
 mod tests {
     use crate::server::test_support::*;
-    use axum::http::{header, StatusCode};
+    use axum::http::{StatusCode, header};
     use serde_json::Value;
 
     const URL: &str = "/weatherapi/locationforecast/2.0/compact?lat=32.08&lon=34.78";
@@ -265,9 +265,11 @@ mod tests {
         let (_, json) = get_json(xml_state_at(NOW), URL).await;
         let ts = json["properties"]["timeseries"].as_array().unwrap();
         let s = &ts[3]["data"];
-        assert!(s["next_1_hours"]["details"]
-            .get("probability_of_precipitation")
-            .is_none());
+        assert!(
+            s["next_1_hours"]["details"]
+                .get("probability_of_precipitation")
+                .is_none()
+        );
         assert!(s["instant"]["details"].get("wind_speed_of_gust").is_none());
     }
 

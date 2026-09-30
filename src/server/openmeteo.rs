@@ -10,15 +10,15 @@
 use std::collections::HashMap;
 use std::str::FromStr;
 
-use axum::extract::{Query, State};
 use axum::Json;
+use axum::extract::{Query, State};
 use chrono::{DateTime, Duration, NaiveDate, Offset, TimeZone, Utc};
 use chrono_tz::Tz;
 use serde::Deserialize;
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 
 use super::codes::{is_day, wmo_code};
-use super::{resolve, round, ApiError, AppState, LocationQuery};
+use super::{ApiError, AppState, LocationQuery, resolve, round};
 use crate::hourly::HourlyPoint;
 use crate::ims_json::DailySummary;
 
@@ -67,7 +67,7 @@ impl Units {
             other => {
                 return Err(ApiError::bad_request(format!(
                     "Invalid temperature_unit {other}"
-                )))
+                )));
             }
         };
         let wind_param = p.wind_speed_unit.as_deref().or(p.windspeed_unit.as_deref());
@@ -79,7 +79,7 @@ impl Units {
             other => {
                 return Err(ApiError::bad_request(format!(
                     "Invalid wind_speed_unit {other}"
-                )))
+                )));
             }
         };
         let inch = match p.precipitation_unit.as_deref().unwrap_or("mm") {
@@ -88,7 +88,7 @@ impl Units {
             other => {
                 return Err(ApiError::bad_request(format!(
                     "Invalid precipitation_unit {other}"
-                )))
+                )));
             }
         };
         Ok(Self {
@@ -111,11 +111,7 @@ impl Units {
     }
 
     fn temp_unit(&self) -> &'static str {
-        if self.fahrenheit {
-            "°F"
-        } else {
-            "°C"
-        }
+        if self.fahrenheit { "°F" } else { "°C" }
     }
 
     /// IMS wind speed is km/h.
@@ -151,11 +147,7 @@ impl Units {
     }
 
     fn precip_unit(&self) -> &'static str {
-        if self.inch {
-            "inch"
-        } else {
-            "mm"
-        }
+        if self.inch { "inch" } else { "mm" }
     }
 }
 
@@ -306,14 +298,18 @@ impl DailyVar {
         let max_opt =
             |f: fn(&HourlyPoint) -> Option<f32>| day.iter().filter_map(|p| f(p)).reduce(f32::max);
         match self {
-            Self::TemperatureMax => json!(u.temp(
-                ims.and_then(|d| d.max_temp)
-                    .unwrap_or_else(|| max(|p| p.temperature))
-            )),
-            Self::TemperatureMin => json!(u.temp(
-                ims.and_then(|d| d.min_temp)
-                    .unwrap_or_else(|| min(|p| p.temperature))
-            )),
+            Self::TemperatureMax => json!(
+                u.temp(
+                    ims.and_then(|d| d.max_temp)
+                        .unwrap_or_else(|| max(|p| p.temperature))
+                )
+            ),
+            Self::TemperatureMin => json!(
+                u.temp(
+                    ims.and_then(|d| d.min_temp)
+                        .unwrap_or_else(|| min(|p| p.temperature))
+                )
+            ),
             Self::PrecipitationProbabilityMax => max_opt(|p| p.precipitation_probability)
                 .map_or(Value::Null, |v| json!(v.round() as i64)),
             Self::WindGustsMax => {
@@ -404,10 +400,11 @@ impl TimeFormat {
         if self.unix {
             json!(t.timestamp())
         } else {
-            json!(t
-                .with_timezone(&self.tz)
-                .format("%Y-%m-%dT%H:%M")
-                .to_string())
+            json!(
+                t.with_timezone(&self.tz)
+                    .format("%Y-%m-%dT%H:%M")
+                    .to_string()
+            )
         }
     }
 
@@ -420,11 +417,7 @@ impl TimeFormat {
     }
 
     fn unit(&self) -> &'static str {
-        if self.unix {
-            "unixtime"
-        } else {
-            "iso8601"
-        }
+        if self.unix { "unixtime" } else { "iso8601" }
     }
 }
 

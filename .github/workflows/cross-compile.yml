@@ -14,16 +14,16 @@ jobs:
       matrix:
         target: ['aarch64-linux-android', 'aarch64-unknown-linux-musl', 'arm-unknown-linux-musleabi', 'armv7-unknown-linux-gnueabihf']
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions-rust-lang/setup-rust-toolchain@v1
+    - uses: actions/checkout@v7
+    - uses: actions-rust-lang/setup-rust-toolchain@v2
     - run: cargo install cross --git https://github.com/cross-rs/cross
     - run: cross build --release --target ${{matrix.target}}
     - run: mv target/${{matrix.target}}/release/weather target/${{matrix.target}}/release/weather-${{matrix.target}}
     - name: Release
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v3
       with:
         files: target/${{matrix.target}}/release/weather-${{matrix.target}}
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v7
       with:
         name: weather-${{matrix.target}}
         path: target/${{matrix.target}}/release/weather-${{matrix.target}}
@@ -35,16 +35,16 @@ jobs:
       matrix:
         target: ['aarch64-unknown-linux-musl']
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions-rust-lang/setup-rust-toolchain@v1
+    - uses: actions/checkout@v7
+    - uses: actions-rust-lang/setup-rust-toolchain@v2
     - run: cargo install cross --git https://github.com/cross-rs/cross
     - run: cross build --release --features server --target ${{matrix.target}}
     - run: mv target/${{matrix.target}}/release/weather target/${{matrix.target}}/release/weather-server-${{matrix.target}}
     - name: Release
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v3
       with:
         files: target/${{matrix.target}}/release/weather-server-${{matrix.target}}
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v7
       with:
         name: weather-server-${{matrix.target}}
         path: target/${{matrix.target}}/release/weather-server-${{matrix.target}}

@@ -486,9 +486,10 @@ mod tests {
         assert_eq!(first.time.to_rfc3339(), "2026-09-30T23:00:00+03:00");
         assert!(first.rain_chance.is_some());
         assert!(first.wind_gust.is_some());
-        assert!(tlv
-            .daily_for(NaiveDate::from_ymd_opt(2026, 10, 1).unwrap())
-            .is_some());
+        assert!(
+            tlv.daily_for(NaiveDate::from_ymd_opt(2026, 10, 1).unwrap())
+                .is_some()
+        );
         assert!(!f.country.is_empty());
     }
 
@@ -503,10 +504,12 @@ mod tests {
             .unwrap();
         assert_eq!(row.rain, 0.77);
         // Wind direction ids map to compass degrees.
-        assert!(f.locations[&2]
-            .hourly
-            .iter()
-            .all(|r| r.wind_direction.is_some_and(|d| (0.0..360.0).contains(&d))));
+        assert!(
+            f.locations[&2]
+                .hourly
+                .iter()
+                .all(|r| r.wind_direction.is_some_and(|d| (0.0..360.0).contains(&d)))
+        );
     }
 
     #[test]
@@ -536,9 +539,10 @@ mod tests {
     #[test]
     fn warnings_without_metadata_still_parse() {
         let w = parse_warnings(WARNINGS_JSON, None).unwrap();
-        assert!(w
-            .iter()
-            .all(|w| w.warning_type.starts_with("Warning type ")));
+        assert!(
+            w.iter()
+                .all(|w| w.warning_type.starts_with("Warning type "))
+        );
     }
 
     #[test]
@@ -552,9 +556,10 @@ mod tests {
         assert!(tlv.iter().all(|w| w.groups.iter().any(|g| g == "18")));
         let now = utc("2026-09-30T18:45:00Z");
         assert!(w.iter().any(|w| w.is_current_or_upcoming(now)));
-        assert!(!w
-            .iter()
-            .any(|w| w.is_current_or_upcoming(utc("2030-01-01T00:00:00Z"))));
+        assert!(
+            !w.iter()
+                .any(|w| w.is_current_or_upcoming(utc("2030-01-01T00:00:00Z")))
+        );
     }
 
     #[test]

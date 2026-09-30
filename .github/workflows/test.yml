@@ -7,8 +7,8 @@ on:
       - '.github/**'
       - '.vscode/**'
 
+  # Any base branch, so stacked PRs get CI too.
   pull_request:
-    branches: [ "master" ]
     paths-ignore:
       - '.github/**'
       - '.vscode/**'
@@ -19,14 +19,14 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions/checkout@v7
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
       - run: cargo test --all-features
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions/checkout@v7
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
           components: rustfmt, clippy
       - run: cargo fmt --check
@@ -35,6 +35,6 @@ jobs:
   run:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions/checkout@v7
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
       - run: cargo run
