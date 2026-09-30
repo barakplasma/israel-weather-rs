@@ -1,2 +1,2 @@
-{{range .}}|{{slice .ForecastTime 11 16}}|{{if gt .Rain 0.0}}🌧️{{else}}🌞{{end}}|{{.MinTemp}}c-{{.MaxTemp}}c|{{if gt .Rain 0.0}}{{.Rain}} cm of rain expected. {{end}}{{.WeatherCodeEnglish}}|
+{{range .}}|{{slice .ForecastTime 11 16}}|{{if gt .Rain 0.0}}🌧️{{else}}🌞{{end}}|{{.MinTemp}}c-{{.MaxTemp}}c|{{if gt .Rain 0.0}}{{.Rain}} mm of rain expected. {{end}}{{.WeatherCodeEnglish}}|
 {{end}}
