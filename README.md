@@ -14,39 +14,43 @@ Could also be setup to alert you or run on linux/mac/windows/raspberry pi with a
 ## Help
 ```
 $ weather --help
-Downloads and Caches Israeli weather forecast from https://ims.gov.il and prints the next forecast for a location as json
-
 Usage: weather [OPTIONS]
 
 Options:
-  -l, --location <LOCATION>  Location to check weather for [default: "Tel Aviv - Yafo"]
+  -l, --location <LOCATION>  Location to check weather for (case-insensitive) [default: "Tel Aviv Coast"]
   -n, --next <NEXT>          Check next n hours ahead [default: 6]
   -a, --all                  Ignore location and print all weather data
+  -o, --offline              Offline mode: only use the previously cached forecast
+      --list-locations       List available location names and exit
+      --now <NOW>            Pretend the current time is this RFC 3339 timestamp (e.g. 2025-03-08T23:00:00Z)
   -h, --help                 Print help
   -V, --version              Print version
 ```
 
+Run `weather --list-locations` to see every location name IMS publishes. An unknown `--location` exits non-zero and lists the valid names.
+
 ## Example output
+`ForecastTime` is Israel local time (`Asia/Jerusalem`) with its UTC offset. Each entry is a 6 hour block. `Rain` is in mm.
 ```json
 [
   {
-    "DewPointTemp": 21.0,
-    "FeelsLike": 25.799999237060547,
-    "ForecastTime": "2023-06-26T21:00:00+00:00",
-    "HeatStress": 23.899999618530273,
-    "HeatStressLevel": 1.0,
-    "MaxTemp": 28.0,
-    "MinTemp": 26.0,
+    "ForecastTime": "2026-10-01T03:00:00+03:00",
+    "Temperature": 22.6,
+    "RelativeHumidity": 70.0,
+    "WindSpeed": 5.0,
     "Rain": 0.0,
-    "RelativeHumidity": 73.0,
-    "Temperature": 25.799999237060547,
-    "UvIndex": null,
-    "UvIndexMax": null,
-    "WeatherCode": 1220,
-    "WeatherCodeEnglish": "Partly cloudy",
-    "WindChill": 28.0,
-    "WindDirection": 270.0,
-    "WindSpeed": 5.0
+    "WindDirection": 135.0,
+    "DewPointTemp": 17.0,
+    "HeatStress": 20.7,
+    "HeatStressLevel": 0.0,
+    "FeelsLike": 22.6,
+    "WindChill": 24.0,
+    "WeatherCode": 1230,
+    "WeatherCodeEnglish": "Cloudy",
+    "MinTemp": 23.0,
+    "MaxTemp": 23.0,
+    "UvIndex": 0.0,
+    "UvIndexMax": 0.0
   }
 ]
 ```
@@ -104,6 +108,7 @@ These override compiled-in defaults without requiring a rebuild:
 |---|---|---|
 | `WEATHER_URL` | IMS forecast XML URL | Use a mirror or local file if the IMS URL changes |
 | `WEATHER_CACHE_DIR` | system temp dir | Change where the downloaded XML is cached |
+| `RUST_LOG` | `warn` | Log verbosity (JSON logs go to stderr), e.g. `RUST_LOG=trace` |
 
 Example:
 ```sh
@@ -114,6 +119,8 @@ WEATHER_CACHE_DIR=/var/cache/weather weather --offline
 ## Get Started with Dev
 1. Get rust via rustup
 1. `cargo run`
+1. `cargo test` (offline, uses the bundled `isr_cities_1week_6hr_forecast.xml` fixture)
+1. `cargo test -- --ignored` (network tests that hit ims.gov.il)
 1. profit
 
 Also check out the github action. im proud of the CI there.
