@@ -30,7 +30,9 @@ Options:
 Run `weather --list-locations` to see every location name IMS publishes. An unknown `--location` exits non-zero and lists the valid names.
 
 ## Example output
-`ForecastTime` is Israel local time (`Asia/Jerusalem`) with its UTC offset. Each entry is a 6 hour block. `Rain` is in mm.
+`ForecastTime` is Israel local time (`Asia/Jerusalem`) with its UTC offset. `Rain` is in mm.
+
+> **Heads up:** the IMS XML the CLI reads is a *6-hourly sample* of IMS's hourly forecast. Every value, `Rain` included, is for that one hour only (not a 6 hour total), and `MinTemp`/`MaxTemp` are just that hour's rounded temperature. Rain that falls between samples doesn't show up here. `weather serve` uses IMS's hourly data instead (see below).
 ```json
 [
   {
@@ -114,7 +116,8 @@ weather serve --listen 0.0.0.0:8080 --schedule "7 * * * *"
 flowchart LR
   IMS[(ims.gov.il XML)] -->|cron refresh| Cache[on-disk cache]
   Cache --> Parse[parse + Asia/Jerusalem times]
-  Parse --> Snap[in-memory snapshot<br/>6h blocks + hourly expansion]
+  JSON[(IMS website JSON<br/>hourly forecast + warnings)] -->|cron refresh| Snap
+  Parse --> Snap[in-memory snapshot<br/>hourly rows, warnings]
   Snap --> UI["/ web UI"]
   Snap --> Native["/api/forecast, /api/locations, /api/status"]
   Snap --> OM["/v1/forecast<br/>Open-Meteo compatible"]
@@ -123,18 +126,29 @@ flowchart LR
 
 | Endpoint | Compatible with | Notes |
 |---|---|---|
-| `/` | | Web UI: search locations, "near me", 48h chart, 6h blocks by day |
-| `/api/forecast?location=Haifa` or `?lat=..&lon=..` | | Native IMS 6-hour blocks from the current block on. Optional `hours=` |
+| `/` | | Web UI: search locations, "near me", IMS warnings, 48h chart, hourly forecast by day with rain chance and gusts |
+| `/api/forecast?location=Haifa` or `?lat=..&lon=..` | | `hourly` rows from the current hour, IMS `daily` summaries, active `warnings`, `country_forecast` text, plus the raw 6-hourly XML `forecasts`. Optional `hours=` |
 | `/api/locations`, `/api/status`, `/healthz` | | Location list, refresh status, health check (503 until data is loaded) |
 | `/v1/forecast?latitude=..&longitude=..` | [Open-Meteo](https://open-meteo.com/en/docs) | `hourly`, `daily`, `current`, `current_weather`, `timezone` (`GMT`, `auto`, IANA), `timeformat`, `forecast_days`, `past_days`, temperature/wind/precipitation units |
 | `/weatherapi/locationforecast/2.0/compact?lat=..&lon=..` (and `/complete`) | [MET Norway](https://api.met.no/weatherapi/locationforecast/2.0/documentation) | GeoJSON `timeseries` with `instant`, `next_1_hours`, `next_6_hours`, `next_12_hours`. Sends `Last-Modified`/`Expires` |
 
+Data sources, refreshed together on the schedule:
+
+| Source | What it gives | If it fails |
+|---|---|---|
+| XML `isr_cities_1week_6hr_forecast.xml` (official, ETag-cached, gzip) | locations and a 6-hourly sample of the forecast, ~9 days | previous data is kept |
+| `ims.gov.il/en/ims_full_forecast_data` (the IMS website's own JSON) | **real hourly** forecast for 7 days: rain, rain chance, gusts, UV, IMS daily min/max, written country forecast | last good copy (also saved on disk), otherwise XML only |
+| `ims.gov.il/en/warnings` (+ `warnings_metadata`, `locations_info`) | IMS warnings (heat, flash floods, high seas, ...) matched to each location's land and sea region, general public only | last good copy |
+
+The website JSON endpoints are undocumented, so parsing is lenient and every part falls back independently. `--ims-json false` turns them off.
+
 How IMS data is adapted:
 - Coordinates resolve to the **nearest IMS location**. Requests more than 100 km from any IMS location get a 400.
-- IMS publishes **6-hour blocks**. For the hourly APIs, instantaneous values (temperature, humidity, wind...) are **linearly interpolated** between blocks, and each block's rain is **spread evenly** across its hours, so totals are preserved. The weather code is taken from the enclosing block.
+- Hourly rows come straight from IMS's hourly JSON. Beyond its 7 days, or without it, hours between the 6-hourly XML samples are **linearly interpolated** (rain as an hourly rate), with the weather code from the nearest sample. `/api/forecast` marks each row `"source": "ims"` or `"interpolated"`.
 - IMS weather codes are mapped to [WMO codes](https://open-meteo.com/en/docs#weather_variable_documentation) (Open-Meteo) and MET `symbol_code`s, using day/night variants from the sun's position.
-- Fields IMS doesn't provide (pressure, cloud cover, precipitation probability...) are omitted. Hours outside the forecast range are `null` in Open-Meteo responses.
-- Wind speed from IMS is treated as km/h. MET responses convert it to m/s.
+- Rain chance and gusts are served as Open-Meteo `precipitation_probability` / `wind_gusts_10m` (and daily maxima) and MET `probability_of_precipitation` / `wind_speed_of_gust`. They're `null`/omitted for interpolated hours.
+- Fields IMS doesn't provide (pressure, cloud cover, ...) are omitted. Hours outside the forecast range are `null` in Open-Meteo responses.
+- Wind speed from IMS is km/h. MET responses convert it to m/s.
 
 Server settings (flags or env vars):
 
@@ -142,9 +156,10 @@ Server settings (flags or env vars):
 |---|---|---|
 | `--listen` | `WEATHER_LISTEN` | `127.0.0.1:8080` |
 | `--schedule` | `WEATHER_SCHEDULE` | `0 7 * * * *` (hourly at :07, Israel time; 5 or 6 field cron) |
-| `--offline` | | only use the cached XML |
+| `--offline` | | only use cached copies |
+| `--ims-json` | `WEATHER_IMS_JSON` | `true`; `false` = XML only |
 
-`WEATHER_URL`, `WEATHER_CACHE_DIR` and `RUST_LOG` (default `info` for the server) apply as well. The server shuts down cleanly on SIGTERM, so it works fine as a Kubernetes Deployment with `/healthz` as its probe.
+`WEATHER_URL`, `WEATHER_IMS_BASE_URL` (default `https://ims.gov.il/en`), `WEATHER_CACHE_DIR` and `RUST_LOG` (default `info` for the server) apply as well. The server shuts down cleanly on SIGTERM, so it works fine as a Kubernetes Deployment with `/healthz` as its probe.
 
 ## Environment variables
 

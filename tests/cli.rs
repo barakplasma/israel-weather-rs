@@ -35,12 +35,12 @@ fn next_forecasts_for_location() {
         "-n",
         "12",
         "--now",
-        "2025-03-08T23:22:00Z",
+        "2026-09-30T18:45:00Z",
     ]);
     let json = stdout_json(&out);
     let forecasts = json.as_array().unwrap();
     assert_eq!(forecasts.len(), 2);
-    assert_eq!(forecasts[0]["ForecastTime"], "2025-03-09T02:00:00+02:00");
+    assert_eq!(forecasts[0]["ForecastTime"], "2026-10-01T03:00:00+03:00");
     assert!(forecasts[0]["WeatherCodeEnglish"].is_string());
 }
 

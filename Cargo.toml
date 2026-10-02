@@ -1,8 +1,8 @@
 [package]
 name = "israel-weather-rs"
 version = "0.4.0"
-edition = "2021"
-rust-version = "1.83"
+edition = "2024"
+rust-version = "1.98"
 description = "a utility to download the israeli weather forecast from ims.gov.il , save it to a cache, and allow recall at any point in the future from the cache as filtered by location and current time. meant for alerting the user to expected rain"
 readme = "README.md"
 repository = "https://github.com/barakplasma/israel-weather-rs"
@@ -24,17 +24,19 @@ unsafe_code = "forbid"
 
 [dependencies]
 axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "query", "tokio"], optional = true }
-cached-path = "0.6"
-chrono = "0.4"
+cached-path = "0.10.1"
+chrono = { version = "0.4.45", features = ["serde"] }
 chrono-tz = "0.10.4"
-clap = { version = "4.5", features = ["derive", "env"] }
+clap = { version = "4.6.7", features = ["derive", "env"] }
 cron = { version = "0.17.0", optional = true }
-serde = { version = "1.0", features = ["derive"] }
-serde-xml-rs = "0.8"
-serde_json = "1.0"
+# Matches the reqwest major cached-path uses, so gzip applies to its downloads too.
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "gzip", "default-tls"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde-xml-rs = "0.8.2"
+serde_json = "1.0.151"
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "net", "signal", "time", "sync"], optional = true }
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = [
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = [
     "fmt",
     "json",
     "env-filter",
@@ -42,10 +44,10 @@ tracing-subscriber = { version = "0.3", features = [
 ] }
 
 [target.'cfg(target_arch = "aarch64")'.dependencies]
-openssl = { version = "0.10.62", features = ["vendored"] }
+openssl = { version = "0.10.81", features = ["vendored"] }
 
 [target.'cfg(target_arch = "arm")'.dependencies]
-openssl = { version = "0.10.62", features = ["vendored"] }
+openssl = { version = "0.10.81", features = ["vendored"] }
 
 [features]
 # `weather serve`: HTTP server with Open-Meteo / MET Norway compatible APIs and an embedded web UI.

@@ -17,11 +17,11 @@ jobs:
             target: x86_64-unknown-linux-gnu
           - os: macos-latest
             target: aarch64-apple-darwin
-          - os: macos-13
+          - os: macos-15-intel
             target: x86_64-apple-darwin
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions/checkout@v7
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
       - name: Build
         run: cargo build --release
       - run: cp ./target/release/weather ./target/release/weather-${{ matrix.target }}
@@ -29,7 +29,7 @@ jobs:
         run: cargo build --release --features server
       - run: cp ./target/release/weather ./target/release/weather-server-${{ matrix.target }}
       - name: Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             ./target/release/weather-${{ matrix.target }}
@@ -39,13 +39,13 @@ jobs:
     name: release x86_64-pc-windows-msvc
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions/checkout@v7
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
       - run: npm install -g shx
       - name: Build
         run: cargo build --release
       - run: shx cp target/release/weather.exe target/release/weather-x86_64-pc-windows-msvc.exe
       - name: Release Windows
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v3
         with:
           files: target/release/weather-x86_64-pc-windows-msvc.exe
