@@ -16,7 +16,7 @@ jobs:
     steps:
     - uses: actions/checkout@v7
     - uses: actions-rust-lang/setup-rust-toolchain@v2
-    - run: cargo install cross --git https://github.com/cross-rs/cross
+    - uses: taiki-e/install-action@cross
     - run: cross build --release --target ${{matrix.target}}
     - run: mv target/${{matrix.target}}/release/weather target/${{matrix.target}}/release/weather-${{matrix.target}}
     - name: Release
@@ -37,7 +37,7 @@ jobs:
     steps:
     - uses: actions/checkout@v7
     - uses: actions-rust-lang/setup-rust-toolchain@v2
-    - run: cargo install cross --git https://github.com/cross-rs/cross
+    - uses: taiki-e/install-action@cross
     - run: cross build --release --features server --target ${{matrix.target}}
     - run: mv target/${{matrix.target}}/release/weather target/${{matrix.target}}/release/weather-server-${{matrix.target}}
     - name: Release
