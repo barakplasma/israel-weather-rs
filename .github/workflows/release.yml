@@ -25,10 +25,15 @@ jobs:
       - name: Build
         run: cargo build --release
       - run: cp ./target/release/weather ./target/release/weather-${{ matrix.target }}
+      - name: Build with web server
+        run: cargo build --release --features server
+      - run: cp ./target/release/weather ./target/release/weather-server-${{ matrix.target }}
       - name: Release
         uses: softprops/action-gh-release@v1
         with:
-          files: ./target/release/weather-${{ matrix.target }}
+          files: |
+            ./target/release/weather-${{ matrix.target }}
+            ./target/release/weather-server-${{ matrix.target }}
 
   release-windows:
     name: release x86_64-pc-windows-msvc
