@@ -8,12 +8,18 @@
 <style>
   :root {
     --bg: #f6f7f9; --card: #fff; --fg: #1c2230; --muted: #667085; --border: #e3e6eb;
-    --accent: #2563eb; --rain: #0ea5e9; --rain-bg: #e0f2fe; --warm: #f97316;
+    --accent: #2563eb; --rain: #0ea5e9; --rain-bg: #e0f2fe; --warm: #f97316; --cool: #38bdf8;
+    --night: rgba(15, 23, 42, .05);
+    --s-clear: #fdf3d7; --s-partly: #e4e7ec; --s-cloudy: #c3c9d3; --s-light: #9fd3f2;
+    --s-rain: #4aa3df; --s-heavy: #1f6fb5; --s-snow: #eef4fb;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #0f1420; --card: #171e2d; --fg: #e6e9ef; --muted: #98a2b3; --border: #283349;
-      --accent: #60a5fa; --rain: #38bdf8; --rain-bg: #0c2a3d; --warm: #fb923c;
+      --accent: #60a5fa; --rain: #38bdf8; --rain-bg: #0c2a3d; --warm: #fb923c; --cool: #7dd3fc;
+      --night: rgba(0, 0, 0, .25);
+      --s-clear: #3a3424; --s-partly: #2c3444; --s-cloudy: #3d475a; --s-light: #24577a;
+      --s-rain: #2b7cb8; --s-heavy: #4aa3df; --s-snow: #c9d6e6;
     }
   }
   * { box-sizing: border-box; }
@@ -30,31 +36,61 @@
   .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px;
           padding: 16px; margin-bottom: 16px; }
   .muted { color: var(--muted); font-size: .88rem; }
-  .now { display: flex; flex-wrap: wrap; gap: 16px 32px; align-items: center; }
-  .now .temp { font-size: 3rem; font-weight: 600; line-height: 1; }
-  .now .icon { font-size: 3rem; }
-  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 4px 16px; flex: 1; }
-  .stats b { display: block; font-size: 1.05rem; }
-  .alert { background: var(--rain-bg); color: var(--fg); border-left: 4px solid var(--rain);
-           padding: 10px 12px; border-radius: 8px; margin-top: 12px; }
-  svg { width: 100%; height: auto; display: block; }
-  .day h3 { margin: 0 0 8px; font-size: 1rem; }
-  table { width: 100%; border-collapse: collapse; }
-  td { padding: 6px 4px; border-top: 1px solid var(--border); white-space: nowrap; }
-  td.desc { white-space: normal; width: 100%; }
-  tr.rain td { background: var(--rain-bg); }
-  .rainv { color: var(--rain); font-weight: 600; }
   .error { color: #dc2626; }
+
+  .now { display: flex; gap: 16px; align-items: center; }
+  .now .icon { font-size: 3.2rem; line-height: 1; }
+  .now .temp { font-size: 2.6rem; font-weight: 600; line-height: 1; }
+  .now .summary { font-size: 1.15rem; }
+  .country { margin: 12px 0 0; white-space: pre-line; }
+
+  /* Condition strip: one coloured run per stretch of similar weather. */
+  .strip { position: relative; height: 34px; border-radius: 6px; overflow: hidden; background: var(--s-clear); }
+  .strip.thin { height: 12px; border-radius: 4px; }
+  .strip .seg { position: absolute; top: 0; bottom: 0; display: flex; align-items: center;
+                padding: 0 6px; font-size: .78rem; color: var(--fg); white-space: nowrap; overflow: hidden;
+                border-right: 1px solid var(--card); }
+  .strip .seg.dark { color: #fff; }
+  .ticks { position: relative; height: 18px; font-size: .75rem; color: var(--muted); }
+  .ticks span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+  .ticks span:first-child { transform: none; }
+  .timeline { margin-top: 14px; }
+
   .warning { border-left: 6px solid var(--wcolor, #FFD700); }
   .warning h3 { margin: 0 0 4px; font-size: 1rem; }
   .warning p { margin: 4px 0 0; }
-  .country { margin: 12px 0 0; white-space: pre-line; }
-  .day h3 { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }
-  .day h3 .muted { font-weight: normal; }
+
+  /* Week list, Merry Sky style: one row per day, click to open that day's graph. */
+  .week { padding: 4px 16px; }
+  details { border-top: 1px solid var(--border); }
+  details:first-child { border-top: 0; }
+  summary { list-style: none; cursor: pointer; display: grid; align-items: center; gap: 12px;
+            grid-template-columns: 2rem 6.5rem 1fr 3rem; padding: 10px 0; }
+  summary::-webkit-details-marker { display: none; }
+  summary .ico { font-size: 1.5rem; text-align: center; }
+  summary .name { font-weight: 600; }
+  .range { display: grid; grid-template-columns: 2.2em 1fr 2.2em; gap: 8px; align-items: center;
+           font-size: .85rem; }
+  .range .lo { text-align: right; color: var(--muted); }
+  .track { position: relative; height: 8px; border-radius: 4px; background: var(--border); }
+  .track i { position: absolute; top: 0; bottom: 0; border-radius: 4px;
+             background: linear-gradient(90deg, var(--cool), var(--warm)); }
+  .drop { position: relative; height: 8px; border-radius: 4px; background: var(--border); overflow: hidden; }
+  .drop i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--rain); }
+  .daygraph { padding: 0 0 14px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 6px; }
+  .legend b { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+  svg { width: 100%; height: auto; display: block; }
+  svg .hit { fill: transparent; }
+  svg .hit:hover { fill: var(--rain); fill-opacity: .08; }
+
   footer { font-size: .85rem; color: var(--muted); }
   footer code { font-size: .8rem; word-break: break-all; }
   footer a { color: var(--accent); }
-  @media (max-width: 560px) { .hide-sm { display: none; } }
+  @media (max-width: 560px) {
+    summary { grid-template-columns: 1.6rem 4.6rem 1fr 2rem; gap: 8px; }
+    .strip .seg { font-size: .7rem; padding: 0 3px; }
+  }
 </style>
 </head>
 <body>
@@ -75,22 +111,17 @@
     <div class="now">
       <div class="icon" id="now-icon"></div>
       <div class="temp" id="now-temp"></div>
-      <div class="stats" id="now-stats"></div>
+      <div class="summary" id="now-summary"></div>
     </div>
-    <div class="alert" id="rain-alert" hidden></div>
+    <div class="timeline" id="timeline"></div>
     <p class="muted country" id="country" hidden></p>
   </section>
 
-  <section class="card" id="chart-card" hidden>
-    <div class="muted" id="chart-caption"></div>
-    <div id="chart"></div>
-  </section>
-
-  <section id="days"></section>
+  <section class="card week" id="days" hidden></section>
 
   <footer class="card">
     <div id="status">Loading…</div>
-    <p>Data: <a href="https://ims.gov.il">Israel Meteorological Service</a>. APIs served by this server:</p>
+    <p>Data: <a href="https://ims.gov.il">Israel Meteorological Service</a>. Hover a graph for exact values. APIs served by this server:</p>
     <ul>
       <li>Native: <code><a id="l-native" href="/api/forecast?location=Tel%20Aviv%20Coast">/api/forecast?location=…</a></code>, <code><a href="/api/locations">/api/locations</a></code>, <code><a href="/api/status">/api/status</a></code></li>
       <li>Open-Meteo: <code><a id="l-om" href="#">/v1/forecast?latitude=…&amp;longitude=…&amp;hourly=temperature_2m,precipitation</a></code></li>
@@ -106,7 +137,9 @@ const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const fmt = (opts) => new Intl.DateTimeFormat(undefined, { timeZone: TZ, ...opts });
 const fmtHour = fmt({ hour: "2-digit", minute: "2-digit" });
+const fmtTick = fmt({ hour: "numeric" });
 const fmtDay = fmt({ weekday: "long", day: "numeric", month: "short" });
+const fmtWeekday = fmt({ weekday: "short" });
 const dayKey = fmt({ year: "numeric", month: "2-digit", day: "2-digit" });
 
 const ICONS = {
@@ -117,13 +150,28 @@ const ICONS = {
 };
 const NIGHT_ICONS = { 1250: "🌙", 1220: "☁️", 1300: "🌙", 1310: "🌙", 1580: "🌙", 1530: "🌧️" };
 const hourIn = (d) => Number(fmt({ hour: "numeric", hourCycle: "h23" }).format(d));
+const isNight = (d) => { const h = hourIn(d); return h < 6 || h >= 18; };
 /** Pick an icon for an IMS code; 18:00-05:59 Israel time counts as night. */
-const icon = (code, when) => {
-  const h = when ? hourIn(when) : 12;
-  const night = h < 6 || h >= 18;
-  return (night && NIGHT_ICONS[code]) || ICONS[code] || "🌡️";
-};
+const icon = (code, when) => ((when && isNight(when) && NIGHT_ICONS[code]) || ICONS[code] || "🌡️");
 const r1 = (v) => (v == null ? "–" : Math.round(v * 10) / 10);
+const deg = (v) => `${Math.round(v)}°`;
+
+/** Sky state for the condition strips, Dark Sky style. Order = severity. */
+const SKY = [
+  { key: "clear", label: "Clear", codes: [1250, 1260, 1270, 1300, 1310, 1320, 1580, 1590] },
+  { key: "partly", label: "Partly cloudy", codes: [1220] },
+  { key: "cloudy", label: "Cloudy", codes: [1230, 1160, 1570, 1010] },
+  { key: "light", label: "Light rain", codes: [1530, 1540, 1560] },
+  { key: "rain", label: "Rain", codes: [1140, 1080] },
+  { key: "heavy", label: "Heavy rain", codes: [1510, 1020], dark: true },
+  { key: "snow", label: "Snow", codes: [1060, 1070, 1520] },
+];
+function sky(r) {
+  let i = SKY.findIndex((s) => s.codes.includes(r.weather_code));
+  if (i < 0) i = 2;
+  if (r.precipitation > 0 && i < 3) i = 3; // measurable rain trumps the sky code
+  return SKY[i];
+}
 
 const store = {
   get(k) { try { return localStorage.getItem(k); } catch { return null; } },
@@ -179,139 +227,181 @@ function renderWarnings(warnings) {
     </div>`).join("");
 }
 
-/** Pick a stat for the day: IMS's daily summary when present, else from the hourly rows. */
-function dayStats(rows, daily) {
-  const temps = rows.map((r) => r.temperature);
-  const chances = rows.map((r) => r.precipitation_probability).filter((c) => c != null);
-  return {
-    min: daily && daily.min_temp != null ? daily.min_temp : Math.min(...temps),
-    max: daily && daily.max_temp != null ? daily.max_temp : Math.max(...temps),
-    rain: rows.reduce((a, r) => a + r.precipitation, 0),
-    chance: chances.length ? Math.max(...chances) : null,
-  };
+/** Full details for one hour, shown only on hover. */
+const hourTitle = (r) => {
+  const d = new Date(r.time);
+  const chance = r.precipitation_probability != null ? `, ${r.precipitation_probability}% chance` : "";
+  return `${fmtWeekday.format(d)} ${fmtHour.format(d)}: ${r.weather}\n${r1(r.temperature)}° (feels ${r1(r.feels_like)}°)` +
+    `\nRain ${r1(r.precipitation)} mm${chance}\nWind ${r1(r.wind_speed)} km/h · Humidity ${r1(r.relative_humidity)}%`;
+};
+
+/**
+ * Coloured condition strip. `pos(r)` places a row on a 0..1 axis, each row spans `step` of it.
+ * Consecutive hours with the same sky state merge into one labelled run.
+ */
+function strip(rows, pos, step, thin, px = 800) {
+  const runs = [];
+  for (const r of rows) {
+    const s = sky(r), last = runs[runs.length - 1];
+    if (last && last.s === s) last.end = pos(r) + step;
+    else runs.push({ s, start: pos(r), end: pos(r) + step, r });
+  }
+  const segs = runs.map(({ s, start, end, r }) => {
+    const w = Math.min(1, end) - start;
+    const label = !thin && w * px > s.label.length * 7 + 12 ? esc(s.label) : "";
+    return `<div class="seg${s.dark ? " dark" : ""}" style="left:${start * 100}%;width:${w * 100}%;background:var(--s-${s.key})" title="${esc(hourTitle(r))}">${label}</div>`;
+  }).join("");
+  return `<div class="strip${thin ? " thin" : ""}">${segs}</div>`;
+}
+
+const ticks = (items) => `<div class="ticks">${items.map(([p, t]) => `<span style="left:${p * 100}%">${esc(t)}</span>`).join("")}</div>`;
+
+/** "this evening", "tomorrow morning", "Tuesday afternoon". */
+function when(d) {
+  const h = hourIn(d);
+  const part = h < 5 ? "night" : h < 12 ? "morning" : h < 17 ? "afternoon" : h < 21 ? "evening" : "night";
+  const today = dayKey.format(new Date()), day = dayKey.format(d);
+  const tomorrow = dayKey.format(new Date(Date.now() + 86400000));
+  if (day === today) return part === "night" && h >= 21 ? "tonight" : `this ${part}`;
+  if (day === tomorrow) return `tomorrow ${part}`;
+  return `${fmt({ weekday: "long" }).format(d)} ${part}`;
 }
 
 function renderNow(loc, data) {
   const cur = data.hourly[0];
-  $("#where").textContent = `${loc.name} · ${loc.latitude.toFixed(3)}, ${loc.longitude.toFixed(3)} · ${loc.elevation} m`;
+  $("#where").textContent = loc.name;
   if (!cur) { $("#now-card").hidden = true; return; }
-  const today = data.daily[0];
-  $("#now-icon").textContent = icon(cur.weather_code, new Date(cur.time));
-  $("#now-temp").textContent = `${r1(cur.temperature)}°`;
-  const stat = (label, value) => `<div><span class="muted">${label}</span><b>${value}</b></div>`;
-  $("#now-stats").innerHTML = [
-    stat("Conditions", esc(cur.weather)),
-    stat("Feels like", `${r1(cur.feels_like)}°`),
-    stat("Humidity", `${r1(cur.relative_humidity)}%`),
-    stat("Wind", `${r1(cur.wind_speed)} km/h${cur.wind_gust != null ? `, gusts ${r1(cur.wind_gust)}` : ""}`),
-    today ? stat("Today", `${r1(today.min_temp)}° – ${r1(today.max_temp)}°`) : "",
-  ].join("");
+  const curDate = new Date(cur.time);
+  $("#now-icon").textContent = icon(cur.weather_code, curDate);
+  $("#now-temp").textContent = deg(cur.temperature);
+  $("#now-temp").title = `Feels like ${r1(cur.feels_like)}°`;
 
   const next48 = data.hourly.slice(0, 48);
-  const rainy = next48.find((r) => r.precipitation > 0);
-  const total = next48.reduce((a, r) => a + r.precipitation, 0);
-  const chances = next48.map((r) => r.precipitation_probability).filter((c) => c != null);
-  const maxChance = chances.length ? Math.max(...chances) : null;
-  const alert = $("#rain-alert");
-  if (rainy) {
-    const t = new Date(rainy.time);
-    alert.textContent = `🌧️ Rain expected from ${fmtDay.format(t)} ${fmtHour.format(t)}: ` +
-      `${r1(total)} mm over the next 48 hours${maxChance != null ? ` (up to ${maxChance}% chance)` : ""}`;
-    alert.hidden = false;
-  } else if (maxChance != null && maxChance >= 20) {
-    alert.textContent = `🌂 Up to ${maxChance}% chance of rain in the next 48 hours`;
-    alert.hidden = false;
-  } else {
-    alert.hidden = true;
-  }
+  const wet = next48.find((r) => r.precipitation > 0 || (r.precipitation_probability || 0) >= 40);
+  let line = cur.weather;
+  if (wet === cur) line += ", rain now";
+  else if (wet) line += `. Rain likely ${when(new Date(wet.time))}`;
+  else line += ". No rain in the next two days";
+  $("#now-summary").textContent = line;
+
+  // Next 24 hours as one strip.
+  const rows = data.hourly.slice(0, 24);
+  const n = rows.length;
+  $("#now-card").hidden = false;
+  const px = $("#timeline").clientWidth;
+  const every = px < 500 ? 6 : 3;
+  const tickItems = rows.flatMap((r, k) => (k === 0 ? [[0, "Now"]] : k % every === 0 ? [[k / n, fmtTick.format(new Date(r.time))]] : []));
+  $("#timeline").innerHTML = n ? strip(rows, (r) => rows.indexOf(r) / n, 1 / n, false, px) + ticks(tickItems) : "";
 
   const country = $("#country");
   country.textContent = data.country_forecast ? `IMS: ${data.country_forecast.description}` : "";
   country.hidden = !data.country_forecast;
-  $("#now-card").hidden = false;
 }
 
-let lastHourly = null;
-function renderChart(hourly) {
-  lastHourly = hourly;
-  const rows = hourly.slice(0, 48);
-  if (rows.length < 2) { $("#chart-card").hidden = true; return; }
-  $("#chart-card").hidden = false;
-  const interpolated = rows.some((r) => r.source === "interpolated");
-  $("#chart-caption").textContent = "Next 48 hours: temperature (line) and rain (bars)" +
-    (interpolated ? ". Some hours are interpolated from 6-hourly samples" : ", hourly IMS forecast");
-
-  // Size the SVG to its container so labels stay readable on phones.
-  const W = Math.max(320, Math.round($("#chart").clientWidth || 800));
-  const H = W < 500 ? 180 : 220, P = { l: 34, r: 34, t: 12, b: 26 };
+/** The IMS daily summary when present, else derived from the hourly rows. */
+function dayStats(rows, daily) {
   const temps = rows.map((r) => r.temperature);
-  const rain = rows.map((r) => r.precipitation || 0);
-  const tMin = Math.floor(Math.min(...temps) - 1), tMax = Math.ceil(Math.max(...temps) + 1);
-  const rMax = Math.max(1, ...rain);
-  const x = (k) => P.l + (k / (rows.length - 1)) * (W - P.l - P.r);
-  const yT = (v) => P.t + (1 - (v - tMin) / (tMax - tMin)) * (H - P.t - P.b);
-  const yR = (v) => (v / rMax) * (H - P.t - P.b);
-  const bw = (W - P.l - P.r) / rows.length;
-
-  let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Temperature and rain for the next 48 hours">`;
-  rain.forEach((v, k) => {
-    if (v > 0) svg += `<rect x="${x(k) - bw / 2}" y="${H - P.b - yR(v)}" width="${bw * 0.9}" height="${yR(v)}" fill="var(--rain)" opacity=".6"><title>${r1(v)} mm</title></rect>`;
-  });
-  for (const v of [tMin, Math.round((tMin + tMax) / 2), tMax]) {
-    svg += `<line x1="${P.l}" x2="${W - P.r}" y1="${yT(v)}" y2="${yT(v)}" stroke="var(--border)"/>`;
-    svg += `<text x="${P.l - 6}" y="${yT(v) + 4}" text-anchor="end" font-size="11" fill="var(--muted)">${v}°</text>`;
-  }
-  svg += `<text x="${W - P.r + 6}" y="${P.t + 10}" font-size="11" fill="var(--rain)">${r1(rMax)}mm</text>`;
-  const pts = temps.map((v, k) => `${x(k).toFixed(1)},${yT(v).toFixed(1)}`).join(" ");
-  svg += `<polyline points="${pts}" fill="none" stroke="var(--warm)" stroke-width="2.5" stroke-linejoin="round"/>`;
-  rows.forEach((r, k) => {
-    const d = new Date(r.time);
-    const hour = hourIn(d);
-    if (hour % (W < 500 ? 12 : 6) === 0) {
-      svg += `<line x1="${x(k)}" x2="${x(k)}" y1="${H - P.b}" y2="${H - P.b + 4}" stroke="var(--muted)"/>`;
-      svg += `<text x="${x(k)}" y="${H - 6}" text-anchor="middle" font-size="11" fill="var(--muted)">${hour === 0 ? fmt({ weekday: "short" }).format(d) : fmtHour.format(d)}</text>`;
-    }
-    const chance = r.precipitation_probability != null ? `, ${r.precipitation_probability}% chance` : "";
-    svg += `<circle cx="${x(k)}" cy="${yT(temps[k])}" r="6" fill="transparent"><title>${fmtHour.format(d)}: ${r1(temps[k])}°, ${r1(rain[k])} mm${chance}</title></circle>`;
-  });
-  svg += "</svg>";
-  $("#chart").innerHTML = svg;
+  const chances = rows.map((r) => r.precipitation_probability).filter((c) => c != null);
+  const rain = rows.reduce((a, r) => a + r.precipitation, 0);
+  return {
+    min: daily && daily.min_temp != null ? daily.min_temp : Math.min(...temps),
+    max: daily && daily.max_temp != null ? daily.max_temp : Math.max(...temps),
+    rain,
+    chance: chances.length ? Math.max(...chances) : rain > 0 ? 100 : 0,
+  };
 }
 
+// ponytail: an hour's slot is its local clock hour, so DST-change days have a gap/overlap of one slot.
+const slot = (r) => hourIn(new Date(r.time)) / 24;
+
+/** One day's graph: condition strip, temperature curve on a week-wide scale, rain bars + chance. */
+function dayGraph(g, tMin, tMax, rMax) {
+  const W = Math.max(300, $("#days").clientWidth - 32);
+  const H = W < 500 ? 130 : 160, P = { t: 8, b: 4 };
+  const x = (p) => p * W;
+  const yT = (v) => P.t + (1 - (v - tMin) / (tMax - tMin || 1)) * (H * 0.62 - P.t);
+  const bh = (v, max) => (v / max) * H * 0.38;
+  const bw = W / 24;
+
+  let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(g.label)}: temperature and rain by hour">`;
+  svg += `<defs><linearGradient id="tg-${g.date}" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="var(--warm)" stop-opacity=".35"/><stop offset="1" stop-color="var(--warm)" stop-opacity="0"/></linearGradient></defs>`;
+  // Night shading.
+  svg += `<rect x="0" y="0" width="${x(6 / 24)}" height="${H}" fill="var(--night)"/>`;
+  svg += `<rect x="${x(18 / 24)}" y="0" width="${x(6 / 24)}" height="${H}" fill="var(--night)"/>`;
+  // Rain chance as a soft band, amount as solid bars, both rising from the bottom.
+  for (const r of g.rows) {
+    const c = r.precipitation_probability || 0;
+    if (c > 0) svg += `<rect x="${x(slot(r))}" y="${H - bh(c, 100)}" width="${bw}" height="${bh(c, 100)}" fill="var(--rain)" opacity=".15"/>`;
+    if (r.precipitation > 0) svg += `<rect x="${x(slot(r)) + bw * 0.2}" y="${H - bh(r.precipitation, rMax)}" width="${bw * 0.6}" height="${bh(r.precipitation, rMax)}" rx="2" fill="var(--rain)"/>`;
+  }
+  // Temperature curve with a fading fill under it.
+  const pts = g.rows.map((r) => [x(slot(r) + 0.5 / 24), yT(r.temperature)]);
+  if (pts.length > 1) {
+    const line = pts.map(([a, b]) => `${a.toFixed(1)},${b.toFixed(1)}`).join(" L");
+    svg += `<path d="M${pts[0][0].toFixed(1)},${H} L${line} L${pts[pts.length - 1][0].toFixed(1)},${H} Z" fill="url(#tg-${g.date})"/>`;
+    svg += `<path d="M${line}" fill="none" stroke="var(--warm)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`;
+  }
+  // "Now" marker on today's graph.
+  if (g.today) svg += `<line x1="${x(slot(g.rows[0]))}" x2="${x(slot(g.rows[0]))}" y1="0" y2="${H}" stroke="var(--fg)" stroke-dasharray="3 3" opacity=".5"/>`;
+  // Invisible per-hour hover targets carrying the exact numbers.
+  for (const r of g.rows) svg += `<rect class="hit" x="${x(slot(r))}" y="0" width="${bw}" height="${H}"><title>${esc(hourTitle(r))}</title></rect>`;
+  svg += "</svg>";
+
+  const tickItems = [0, 6, 12, 18].map((h) => [h / 24, fmtTick.format(new Date(Date.UTC(2000, 0, 1, h - 2)))]);
+  return strip(g.rows, slot, 1 / 24, true) + svg + ticks(tickItems);
+}
+
+let last = null, rendered = false;
 function renderDays(hourly, daily) {
+  last = { hourly, daily };
   const groups = new Map();
   for (const r of hourly) {
     const d = new Date(r.time);
     const k = dayKey.format(d);
-    if (!groups.has(k)) groups.set(k, { label: fmtDay.format(d), date: r.time.slice(0, 10), rows: [] });
+    if (!groups.has(k)) groups.set(k, { label: fmtDay.format(d), short: fmtWeekday.format(d), date: r.time.slice(0, 10), rows: [] });
     groups.get(k).rows.push(r);
   }
-  const wet = (r) => r.precipitation > 0 || (r.precipitation_probability || 0) >= 20;
-  $("#days").innerHTML = [...groups.values()].map((g) => {
-    const st = dayStats(g.rows, daily.find((d) => d.date === g.date));
-    // The current hour, every 3rd hour, and any hour with rain or a real chance of it.
-    const shown = g.rows.filter((r) => r === hourly[0] || hourIn(new Date(r.time)) % 3 === 0 || wet(r));
+  const days = [...groups.values()];
+  $("#days").hidden = !days.length;
+  if (!days.length) return;
+  days[0].today = true;
+  days[0].short = "Today";
+  for (const g of days) g.st = dayStats(g.rows, daily.find((d) => d.date === g.date));
+
+  // One scale for the whole week, so days compare at a glance.
+  const tMin = Math.min(...days.map((g) => g.st.min), ...hourly.map((r) => r.temperature));
+  const tMax = Math.max(...days.map((g) => g.st.max), ...hourly.map((r) => r.temperature));
+  const rMax = Math.max(2, ...hourly.map((r) => r.precipitation || 0));
+  const pct = (v) => ((v - tMin) / (tMax - tMin || 1)) * 100;
+  const open = new Set([...document.querySelectorAll("#days details[open]")].map((d) => d.dataset.date));
+  if (!rendered) open.add((days.find((g) => g.rows.length >= 6) || days[0]).date);
+  rendered = true;
+
+  $("#days").innerHTML = days.map((g) => {
+    // Representative icon: the worst sky of the daytime hours (or any hour, for a partial day).
+    const daytime = g.rows.filter((r) => !isNight(new Date(r.time)));
+    const pick = (daytime.length ? daytime : g.rows).reduce((a, r) => (SKY.indexOf(sky(r)) > SKY.indexOf(sky(a)) ? r : a));
+    const { min, max, chance } = g.st;
     return `
-    <div class="card day">
-      <h3>${esc(g.label)}
-        <span class="muted">${r1(st.min)}° – ${r1(st.max)}°</span>
-        <span class="${st.rain > 0 ? "rainv" : "muted"}">${r1(st.rain)} mm</span>
-        ${st.chance != null ? `<span class="muted">☔ ${st.chance}%</span>` : ""}
-      </h3>
-      <table>${shown.map((r) => `
-        <tr class="${wet(r) ? "rain" : ""}">
-          <td>${fmtHour.format(new Date(r.time))}</td>
-          <td>${icon(r.weather_code, new Date(r.time))}</td>
-          <td class="desc">${esc(r.weather)}</td>
-          <td>${r1(r.temperature)}°</td>
-          <td class="${r.precipitation > 0 ? "rainv" : "muted"}">${r1(r.precipitation)} mm</td>
-          <td class="muted">${r.precipitation_probability != null ? `☔ ${r.precipitation_probability}%` : ""}</td>
-          <td class="hide-sm muted">💨 ${r1(r.wind_speed)}${r.wind_gust != null ? `–${r1(r.wind_gust)}` : ""} km/h</td>
-          <td class="hide-sm muted">💧 ${r1(r.relative_humidity)}%</td>
-        </tr>`).join("")}
-      </table>
+    <details data-date="${g.date}"${open.has(g.date) ? " open" : ""}>
+      <summary title="${esc(g.label)}">
+        <span class="ico" title="${esc(pick.weather)}">${icon(pick.weather_code)}</span>
+        <span class="name">${esc(g.short)}</span>
+        <span class="range" title="${r1(min)}° – ${r1(max)}°">
+          <span class="lo">${deg(min)}</span>
+          <span class="track"><i style="left:${pct(min)}%;width:${Math.max(2, pct(max) - pct(min))}%"></i></span>
+          <span>${deg(max)}</span>
+        </span>
+        <span class="drop" title="Rain: ${chance}% chance, ${r1(g.st.rain)} mm"><i style="width:${chance}%"></i></span>
+      </summary>
+      <div class="daygraph">${dayGraph(g, tMin, tMax, rMax)}</div>
+    </details>`;
+  }).join("") + `<div class="legend muted">
+      <span><b style="background:var(--warm)"></b>Temperature</span>
+      <span><b style="background:var(--rain)"></b>Rain</span>
+      <span><b style="background:var(--rain);opacity:.25"></b>Chance of rain</span>
+      ${SKY.map((s) => `<span><b style="background:var(--s-${s.key})"></b>${s.label}</span>`).join("")}
     </div>`;
-  }).join("");
 }
 
 async function show(query) {
@@ -331,7 +421,6 @@ async function show(query) {
 
     renderWarnings(data.warnings);
     renderNow(loc, data);
-    renderChart(data.hourly);
     renderDays(data.hourly, data.daily || []);
   } catch (e) {
     showError(e.message);
@@ -341,7 +430,7 @@ async function show(query) {
 let resizeTimer;
 addEventListener("resize", () => {
   clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(() => lastHourly && renderChart(lastHourly), 150);
+  resizeTimer = setTimeout(() => last && renderDays(last.hourly, last.daily), 150);
 });
 
 let names = [];
