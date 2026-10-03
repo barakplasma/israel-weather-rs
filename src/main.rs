@@ -1,3 +1,5 @@
+#![allow(linker_messages)] // cross's aarch64 linker wrapper traces to stderr; CI denies warnings.
+
 use std::process::ExitCode;
 
 use chrono::{DateTime, Utc};
