@@ -53,7 +53,7 @@
   .strip .seg.dark { color: #fff; }
   .ticks { position: relative; height: 18px; font-size: .75rem; color: var(--muted); }
   .ticks span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
-  .ticks span:first-child { transform: none; }
+  .ticks:not(.centred) span:first-child { transform: none; }
   .timeline { margin-top: 14px; }
 
   .warning { border-left: 6px solid var(--wcolor, #FFD700); }
@@ -77,12 +77,15 @@
              background: linear-gradient(90deg, var(--cool), var(--warm)); }
   .drop { position: relative; height: 8px; border-radius: 4px; background: var(--border); overflow: hidden; }
   .drop i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--rain); }
-  .daygraph { padding: 0 0 14px; }
+  .daygraph { padding: 0 0 14px; position: relative; }
+  .daygraph svg { touch-action: pan-y; cursor: crosshair; }
+  .scrub { position: absolute; top: 18px; transform: translateX(-50%); pointer-events: none; z-index: 1;
+           background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 4px 8px;
+           font-size: .8rem; white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
+  .rainchart .lvl { font-size: 10px; fill: var(--muted); }
   .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 6px; }
   .legend b { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
   svg { width: 100%; height: auto; display: block; }
-  svg .hit { fill: transparent; }
-  svg .hit:hover { fill: var(--rain); fill-opacity: .08; }
 
   footer { font-size: .85rem; color: var(--muted); }
   footer code { font-size: .8rem; word-break: break-all; }
@@ -121,7 +124,7 @@
 
   <footer class="card">
     <div id="status">Loading…</div>
-    <p>Data: <a href="https://ims.gov.il">Israel Meteorological Service</a>. Hover a graph for exact values. APIs served by this server:</p>
+    <p>Data: <a href="https://ims.gov.il">Israel Meteorological Service</a>. Tap or hover a graph for exact values. APIs served by this server:</p>
     <ul>
       <li>Native: <code><a id="l-native" href="/api/forecast?location=Tel%20Aviv%20Coast">/api/forecast?location=…</a></code>, <code><a href="/api/locations">/api/locations</a></code>, <code><a href="/api/status">/api/status</a></code></li>
       <li>Open-Meteo: <code><a id="l-om" href="#">/v1/forecast?latitude=…&amp;longitude=…&amp;hourly=temperature_2m,precipitation</a></code></li>
@@ -254,7 +257,7 @@ function strip(rows, pos, step, thin, px = 800) {
   return `<div class="strip${thin ? " thin" : ""}">${segs}</div>`;
 }
 
-const ticks = (items) => `<div class="ticks">${items.map(([p, t]) => `<span style="left:${p * 100}%">${esc(t)}</span>`).join("")}</div>`;
+const ticks = (items, centred) => `<div class="ticks${centred ? " centred" : ""}">${items.map(([p, t]) => `<span style="left:${p * 100}%">${esc(t)}</span>`).join("")}</div>`;
 
 /** "this evening", "tomorrow morning", "Tuesday afternoon". */
 function when(d) {
@@ -262,9 +265,41 @@ function when(d) {
   const part = h < 5 ? "night" : h < 12 ? "morning" : h < 17 ? "afternoon" : h < 21 ? "evening" : "night";
   const today = dayKey.format(new Date()), day = dayKey.format(d);
   const tomorrow = dayKey.format(new Date(Date.now() + 86400000));
-  if (day === today) return part === "night" && h >= 21 ? "tonight" : `this ${part}`;
+  if (day === today) return part === "night" ? "tonight" : `this ${part}`;
   if (day === tomorrow) return `tomorrow ${part}`;
   return `${fmt({ weekday: "long" }).format(d)} ${part}`;
+}
+
+const isWet = (r) => r.precipitation > 0 || (r.precipitation_probability || 0) >= 40;
+
+function timeline(rows, px) {
+  const n = rows.length;
+  const every = px < 500 ? 6 : 3;
+  const tickItems = rows.flatMap((r, k) => (k === 0 ? [[0, "Now"]] : k % every === 0 ? [[k / n, fmtTick.format(new Date(r.time))]] : []));
+  $("#timeline").innerHTML = n ? strip(rows, (r) => rows.indexOf(r) / n, 1 / n, false, px) + ticks(tickItems) : "";
+}
+
+/** Rain intensity levels (mm/h), as used by Merry Sky / Dark Sky. */
+const LEVELS = [["light", 0.5], ["moderate", 2.5], ["heavy", 7.6]];
+const level = (mm) => Math.min(1, Math.log1p(mm) / Math.log1p(10));
+
+/** Next few hours of rain: bars by intensity, chance as a faint band behind them. */
+function rainChart(rows, px) {
+  const W = Math.max(300, px), H = 90, T = 14, n = rows.length, bw = W / n;
+  const y = (f) => H - f * (H - T);
+  let svg = `<svg class="rainchart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Rain over the next ${n} hours">`;
+  for (const [name, mm] of LEVELS) {
+    const ly = y(level(mm));
+    svg += `<line x1="0" x2="${W}" y1="${ly}" y2="${ly}" stroke="var(--border)" stroke-dasharray="2 3"/><text class="lvl" x="2" y="${ly - 3}">${name}</text>`;
+  }
+  rows.forEach((r, k) => {
+    const c = (r.precipitation_probability || 0) / 100;
+    if (c) svg += `<rect x="${k * bw + 2}" y="${y(c)}" width="${bw - 4}" height="${H - y(c)}" fill="var(--rain)" opacity=".12"/>`;
+    const h = level(r.precipitation || 0);
+    if (h) svg += `<rect x="${k * bw + bw * 0.15}" y="${y(h)}" width="${bw * 0.7}" height="${H - y(h)}" rx="3" fill="var(--rain)"/>`;
+  });
+  svg += "</svg>";
+  return svg + ticks(rows.map((r, k) => [(k + 0.5) / n, k === 0 ? "Now" : fmtTick.format(new Date(r.time))]), true);
 }
 
 function renderNow(loc, data) {
@@ -277,21 +312,22 @@ function renderNow(loc, data) {
   $("#now-temp").title = `Feels like ${r1(cur.feels_like)}°`;
 
   const next48 = data.hourly.slice(0, 48);
-  const wet = next48.find((r) => r.precipitation > 0 || (r.precipitation_probability || 0) >= 40);
+  const wet = next48.find(isWet);
   let line = cur.weather;
   if (wet === cur) line += ", rain now";
   else if (wet) line += `. Rain likely ${when(new Date(wet.time))}`;
   else line += ". No rain in the next two days";
   $("#now-summary").textContent = line;
 
-  // Next 24 hours as one strip.
-  const rows = data.hourly.slice(0, 24);
-  const n = rows.length;
   $("#now-card").hidden = false;
   const px = $("#timeline").clientWidth;
-  const every = px < 500 ? 6 : 3;
-  const tickItems = rows.flatMap((r, k) => (k === 0 ? [[0, "Now"]] : k % every === 0 ? [[k / n, fmtTick.format(new Date(r.time))]] : []));
-  $("#timeline").innerHTML = n ? strip(rows, (r) => rows.indexOf(r) / n, 1 / n, false, px) + ticks(tickItems) : "";
+  const soon = data.hourly.slice(0, 6);
+  if (soon.some(isWet)) {
+    $("#timeline").innerHTML = rainChart(soon, px);
+  } else {
+    // Next 24 hours as one strip.
+    timeline(data.hourly.slice(0, 24), px);
+  }
 
   const country = $("#country");
   country.textContent = data.country_forecast ? `IMS: ${data.country_forecast.description}` : "";
@@ -343,15 +379,15 @@ function dayGraph(g, tMin, tMax, rMax) {
   }
   // "Now" marker on today's graph.
   if (g.today) svg += `<line x1="${x(slot(g.rows[0]))}" x2="${x(slot(g.rows[0]))}" y1="0" y2="${H}" stroke="var(--fg)" stroke-dasharray="3 3" opacity=".5"/>`;
-  // Invisible per-hour hover targets carrying the exact numbers.
-  for (const r of g.rows) svg += `<rect class="hit" x="${x(slot(r))}" y="0" width="${bw}" height="${H}"><title>${esc(hourTitle(r))}</title></rect>`;
+  // Scrubber cursor, positioned by the pointer handler.
+  svg += `<line class="cursor" x1="0" x2="0" y1="0" y2="${H}" stroke="var(--fg)" stroke-width="1.5" visibility="hidden"/>`;
   svg += "</svg>";
 
   const tickItems = [0, 6, 12, 18].map((h) => [h / 24, fmtTick.format(new Date(Date.UTC(2000, 0, 1, h - 2)))]);
   return strip(g.rows, slot, 1 / 24, true) + svg + ticks(tickItems);
 }
 
-let last = null, rendered = false;
+let last = null, rendered = false, dayRows = new Map();
 function renderDays(hourly, daily) {
   last = { hourly, daily };
   const groups = new Map();
@@ -362,6 +398,7 @@ function renderDays(hourly, daily) {
     groups.get(k).rows.push(r);
   }
   const days = [...groups.values()];
+  dayRows = new Map(days.map((g) => [g.date, g.rows]));
   $("#days").hidden = !days.length;
   if (!days.length) return;
   days[0].today = true;
@@ -394,7 +431,7 @@ function renderDays(hourly, daily) {
         </span>
         <span class="drop" title="Rain: ${chance}% chance, ${r1(g.st.rain)} mm"><i style="width:${chance}%"></i></span>
       </summary>
-      <div class="daygraph">${dayGraph(g, tMin, tMax, rMax)}</div>
+      <div class="daygraph" data-date="${g.date}">${dayGraph(g, tMin, tMax, rMax)}<div class="scrub" hidden></div></div>
     </details>`;
   }).join("") + `<div class="legend muted">
       <span><b style="background:var(--warm)"></b>Temperature</span>
@@ -404,10 +441,12 @@ function renderDays(hourly, daily) {
     </div>`;
 }
 
+let lastData = null;
 async function show(query) {
   showError("");
   try {
     const data = await getJSON(`/api/forecast?${query}`);
+    lastData = data;
     const loc = data.location;
     const coords = `latitude=${loc.latitude}&longitude=${loc.longitude}`;
 
@@ -427,10 +466,43 @@ async function show(query) {
   }
 }
 
+/** Tap or drag across a day graph to read one hour's values. */
+function scrub(e) {
+  const box = e.target.closest(".daygraph");
+  const svg = box && box.querySelector("svg");
+  if (!svg) return;
+  const rect = svg.getBoundingClientRect();
+  const f = Math.min(0.9999, Math.max(0, (e.clientX - rect.left) / rect.width));
+  const rows = dayRows.get(box.dataset.date) || [];
+  const r = rows.find((row) => Math.floor(f * 24) === Math.round(slot(row) * 24));
+  const label = box.querySelector(".scrub"), cursor = svg.querySelector(".cursor");
+  if (!r) { label.hidden = true; cursor.setAttribute("visibility", "hidden"); return; }
+  const vx = (slot(r) + 0.5 / 24) * svg.viewBox.baseVal.width;
+  cursor.setAttribute("x1", vx); cursor.setAttribute("x2", vx); cursor.setAttribute("visibility", "visible");
+  const chance = r.precipitation_probability != null ? ` · ☔ ${r.precipitation_probability}%` : "";
+  const rain = r.precipitation > 0 ? ` · ${r1(r.precipitation)} mm` : "";
+  label.textContent = `${fmtHour.format(new Date(r.time))} · ${r.weather} · ${deg(r.temperature)}${rain}${chance}`;
+  label.hidden = false;
+  const px = (slot(r) + 0.5 / 24) * rect.width;
+  label.style.left = `${Math.min(rect.width - label.offsetWidth / 2, Math.max(label.offsetWidth / 2, px))}px`;
+}
+function unscrub(e) {
+  const box = e.target.closest(".daygraph");
+  if (!box || e.target.tagName !== "svg" || e.pointerType === "touch") return; // keep the last tapped hour visible on phones
+  box.querySelector(".scrub").hidden = true;
+  box.querySelector(".cursor")?.setAttribute("visibility", "hidden");
+}
+$("#days").addEventListener("pointerdown", scrub);
+$("#days").addEventListener("pointermove", scrub);
+$("#days").addEventListener("pointerleave", unscrub, true);
+
 let resizeTimer;
 addEventListener("resize", () => {
   clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(() => last && renderDays(last.hourly, last.daily), 150);
+  resizeTimer = setTimeout(() => {
+    if (lastData) renderNow(lastData.location, lastData);
+    if (last) renderDays(last.hourly, last.daily);
+  }, 150);
 });
 
 let names = [];
