@@ -7,6 +7,10 @@ updates:
     groups:
       cargo-minor:
         update-types: [minor, patch]
+    ignore:
+      # Must stay on cached-path's reqwest major; see Cargo.toml.
+      - dependency-name: reqwest
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
