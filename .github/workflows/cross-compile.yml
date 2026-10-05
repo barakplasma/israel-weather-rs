@@ -11,8 +11,10 @@ jobs:
     name: cross compile
     runs-on: ubuntu-latest
     strategy:
+      # One broken target must not cancel the others' uploads.
+      fail-fast: false
       matrix:
-        target: ['aarch64-linux-android', 'aarch64-unknown-linux-musl', 'arm-unknown-linux-musleabi', 'armv7-unknown-linux-gnueabihf']
+        target: ['aarch64-unknown-linux-musl', 'arm-unknown-linux-musleabi', 'armv7-unknown-linux-gnueabihf']
     steps:
     - uses: actions/checkout@v7
     - uses: actions-rust-lang/setup-rust-toolchain@v2
@@ -20,6 +22,7 @@ jobs:
     - run: cross build --release --target ${{matrix.target}}
     - run: mv target/${{matrix.target}}/release/weather target/${{matrix.target}}/release/weather-${{matrix.target}}
     - name: Release
+      if: github.event_name == 'release'
       uses: softprops/action-gh-release@v3
       with:
         files: target/${{matrix.target}}/release/weather-${{matrix.target}}
@@ -27,6 +30,35 @@ jobs:
       with:
         name: weather-${{matrix.target}}
         path: target/${{matrix.target}}/release/weather-${{matrix.target}}
+
+  android:
+    name: build (aarch64-linux-android)
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+    - uses: actions-rust-lang/setup-rust-toolchain@v2
+      with:
+        target: aarch64-linux-android
+    - uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-ndk
+    # The runner's preinstalled NDK, not cross's android image: that ships NDK r21,
+    # which lacks the libunwind current Rust links against ("cannot find -lunwind").
+    # API 24 = Android 7.0+.
+    # openssl-src's Android configure reads ANDROID_NDK_ROOT, cargo-ndk ANDROID_NDK_HOME.
+    - run: |
+        export ANDROID_NDK_HOME="$ANDROID_NDK_LATEST_HOME" ANDROID_NDK_ROOT="$ANDROID_NDK_LATEST_HOME"
+        cargo ndk --target aarch64-linux-android --platform 24 build --release
+    - run: mv target/aarch64-linux-android/release/weather target/aarch64-linux-android/release/weather-aarch64-linux-android
+    - name: Release
+      if: github.event_name == 'release'
+      uses: softprops/action-gh-release@v3
+      with:
+        files: target/aarch64-linux-android/release/weather-aarch64-linux-android
+    - uses: actions/upload-artifact@v7
+      with:
+        name: weather-aarch64-linux-android
+        path: target/aarch64-linux-android/release/weather-aarch64-linux-android
 
   cross-compile-server:
     name: cross compile with web server
@@ -41,6 +73,7 @@ jobs:
     - run: cross build --release --features server --target ${{matrix.target}}
     - run: mv target/${{matrix.target}}/release/weather target/${{matrix.target}}/release/weather-server-${{matrix.target}}
     - name: Release
+      if: github.event_name == 'release'
       uses: softprops/action-gh-release@v3
       with:
         files: target/${{matrix.target}}/release/weather-server-${{matrix.target}}
