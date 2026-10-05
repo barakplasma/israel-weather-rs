@@ -39,7 +39,9 @@ jobs:
     - uses: actions-rust-lang/setup-rust-toolchain@v2
       with:
         target: aarch64-linux-android
-    - uses: taiki-e/install-action@cargo-ndk
+    - uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-ndk
     # The runner's preinstalled NDK, not cross's android image: that ships NDK r21,
     # which lacks the libunwind current Rust links against ("cannot find -lunwind").
     # API 24 = Android 7.0+.
