@@ -8,6 +8,11 @@ readme = "README.md"
 repository = "https://github.com/barakplasma/israel-weather-rs"
 license = "MIT"
 
+[workspace]
+members = [".", "crates/weather-api", "web"]
+# The web UI only builds for wasm32; `trunk` builds it (see web/README.md).
+default-members = [".", "crates/weather-api"]
+
 [[bin]]
 name = "weather"
 path = "src/main.rs"
@@ -23,12 +28,13 @@ unsafe_code = "forbid"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "query", "tokio"], optional = true }
+axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "query", "tokio", "matched-path"], optional = true }
 cached-path = "0.10.1"
 chrono = { version = "0.4.45", features = ["serde"] }
 chrono-tz = "0.10.4"
 clap = { version = "4.6.7", features = ["derive", "env"] }
 cron = { version = "0.17.0", optional = true }
+weather-api = { path = "crates/weather-api", optional = true }
 # Must match the reqwest major cached-path uses (0.12), so gzip applies to its
 # downloads too. Its default-tls is native-tls (OpenSSL): rustls-platform-verifier
 # (0.13's default) panics on Android outside an app (no JVM context).
@@ -53,7 +59,7 @@ openssl = { version = "0.10.81", features = ["vendored"] }
 
 [features]
 # `weather serve`: HTTP server with Open-Meteo / MET Norway compatible APIs and an embedded web UI.
-server = ["dep:axum", "dep:tokio", "dep:cron"]
+server = ["dep:axum", "dep:tokio", "dep:cron", "dep:weather-api"]
 
 [dev-dependencies]
 http-body-util = "0.1.5"

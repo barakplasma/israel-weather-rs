@@ -1,13 +1,16 @@
 //! `weather serve`: an HTTP server that refreshes the IMS forecast on a cron schedule and serves
-//! - a small native JSON API (`/api/...`),
-//! - an Open-Meteo compatible `/v1/forecast`,
+//! - an Open-Meteo compatible `/v1/forecast` and geocoding `/v1/search`,
 //! - a MET Norway (api.met.no) compatible `/weatherapi/locationforecast/2.0/{compact,complete}`,
+//! - IMS-only extras at `/api/ims` and server status at `/api/status`,
 //! - an embedded web UI at `/`.
+//!
+//! Response types live in the `weather-api` crate, shared with the web UI.
 
 mod api;
 pub mod codes;
 mod metno;
 mod openmeteo;
+mod stats;
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -23,6 +26,7 @@ use chrono_tz::Asia::Jerusalem;
 use cron::Schedule;
 use serde_json::json;
 use tracing::{error, info, warn};
+use weather_api::status::{Refresh, SourceResult};
 
 use crate::hourly::{HourlyPoint, expand_hourly, merge_hourly};
 use crate::ims_json::{self, CountryForecast, DailySummary, FullForecast, LocationRegion, Warning};
@@ -127,6 +131,7 @@ pub struct AppState {
     next_refresh: Arc<RwLock<Option<DateTime<Utc>>>>,
     schedule: Arc<str>,
     clock: Clock,
+    stats: Arc<stats::Stats>,
 }
 
 impl AppState {
@@ -135,6 +140,7 @@ impl AppState {
             snapshot: Arc::default(),
             next_refresh: Arc::default(),
             schedule: schedule.into(),
+            stats: Arc::new(stats::Stats::new(clock())),
             clock,
         }
     }
@@ -302,9 +308,9 @@ pub fn router(state: AppState) -> Router {
         .route("/", get(index))
         .route("/healthz", get(healthz))
         .route("/api/status", get(api::status))
-        .route("/api/locations", get(api::locations))
-        .route("/api/forecast", get(api::forecast))
+        .route("/api/ims", get(api::extras))
         .route("/v1/forecast", get(openmeteo::forecast))
+        .route("/v1/search", get(api::search))
         .route(
             "/weatherapi/locationforecast/2.0/compact",
             get(metno::compact),
@@ -313,6 +319,10 @@ pub fn router(state: AppState) -> Router {
             "/weatherapi/locationforecast/2.0/complete",
             get(metno::compact),
         )
+        .route_layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            stats::track,
+        ))
         .layer(axum::middleware::map_response(allow_any_origin))
         .with_state(state)
 }
@@ -326,12 +336,27 @@ pub struct RefreshOptions {
     pub ims_json: bool,
 }
 
-fn fetch_extras(offline: bool, prev: Extras, now: DateTime<Utc>) -> Extras {
-    fn ok_or_warn<T>(what: &str, r: Result<T, crate::Error>) -> Option<T> {
+/// Each source's outcome is appended to `results`.
+fn fetch_extras(
+    offline: bool,
+    prev: Extras,
+    now: DateTime<Utc>,
+    results: &mut Vec<SourceResult>,
+) -> Extras {
+    fn ok_or_warn<T>(
+        results: &mut Vec<SourceResult>,
+        what: &str,
+        r: Result<T, crate::Error>,
+    ) -> Option<T> {
+        results.push(SourceResult {
+            name: what.into(),
+            error: r.as_ref().err().map(ToString::to_string),
+        });
         r.inspect_err(|e| warn!("{what} unavailable, keeping previous copy: {e}"))
             .ok()
     }
     let full = ok_or_warn(
+        results,
         "IMS hourly forecast",
         ims_json::fetch(
             ims_json::FULL_FORECAST,
@@ -340,6 +365,7 @@ fn fetch_extras(offline: bool, prev: Extras, now: DateTime<Utc>) -> Extras {
         ),
     );
     let metadata = ok_or_warn(
+        results,
         "IMS warnings metadata",
         ims_json::fetch(ims_json::WARNINGS_METADATA, offline, |s| {
             serde_json::from_str::<serde_json::Value>(s)?;
@@ -347,12 +373,14 @@ fn fetch_extras(offline: bool, prev: Extras, now: DateTime<Utc>) -> Extras {
         }),
     );
     let warnings = ok_or_warn(
+        results,
         "IMS warnings",
         ims_json::fetch(ims_json::WARNINGS, offline, |s| {
             ims_json::parse_warnings(s, metadata.as_deref())
         }),
     );
     let regions = ok_or_warn(
+        results,
         "IMS location regions",
         ims_json::fetch(
             ims_json::LOCATIONS_INFO,
@@ -378,16 +406,29 @@ pub async fn refresh(state: &AppState, opts: RefreshOptions) {
     let prev = state.snapshot();
     let prev_extras = prev.as_ref().map(|s| s.extras.clone()).unwrap_or_default();
     let now = state.now();
+    let started = std::time::Instant::now();
     let result = tokio::task::spawn_blocking(move || {
         let xml = crate::get_israeli_weather_forecast(opts.offline);
+        let mut sources = vec![SourceResult {
+            name: "forecast xml".into(),
+            error: xml.as_ref().err().map(ToString::to_string),
+        }];
         let extras = if opts.ims_json {
-            fetch_extras(opts.offline, prev_extras, now)
+            fetch_extras(opts.offline, prev_extras, now, &mut sources)
         } else {
             Extras::default()
         };
-        (xml, extras)
+        (xml, extras, sources)
     })
     .await;
+    let result = result.map(|(xml, extras, sources)| {
+        state.stats.record_refresh(Refresh {
+            started_at: now,
+            duration_ms: started.elapsed().as_millis() as u64,
+            sources,
+        });
+        (xml, extras)
+    });
     match result {
         Ok((Ok(data), extras)) => {
             let locations = data.location.len();
@@ -598,7 +639,7 @@ mod tests {
             request(empty.clone(), "/healthz").await.0,
             StatusCode::SERVICE_UNAVAILABLE
         );
-        let (status, json) = get_json(empty, "/api/locations").await;
+        let (status, json) = get_json(empty, "/v1/search?name=haifa").await;
         assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
         assert_eq!(json["error"], true);
         assert_eq!(request(state_at(NOW), "/healthz").await.0, StatusCode::OK);
@@ -606,7 +647,7 @@ mod tests {
 
     #[tokio::test]
     async fn cors_header_on_api_responses() {
-        let (_, headers, _) = request(state_at(NOW), "/api/locations").await;
+        let (_, headers, _) = request(state_at(NOW), "/v1/search?name=haifa").await;
         assert_eq!(headers[header::ACCESS_CONTROL_ALLOW_ORIGIN], "*");
     }
 
