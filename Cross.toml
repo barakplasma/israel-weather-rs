@@ -1,0 +1,3 @@
+# build.rs records the commit for /api/status; git is not available inside the cross image.
+[build.env]
+passthrough = ["GITHUB_SHA"]

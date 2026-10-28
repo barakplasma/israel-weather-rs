@@ -61,6 +61,15 @@ openssl = { version = "0.10.81", features = ["vendored"] }
 # `weather serve`: HTTP server with Open-Meteo / MET Norway compatible APIs and an embedded web UI.
 server = ["dep:axum", "dep:tokio", "dep:cron", "dep:weather-api"]
 
+[build-dependencies]
+# Pre-compresses the embedded web UI.
+flate2 = "1.1.10"
+
 [dev-dependencies]
 http-body-util = "0.1.5"
 tower = { version = "0.5.3", features = ["util"] }
+
+# The web UI is downloaded by every visitor: optimize it for size.
+[profile.release.package.weather-web]
+opt-level = "z"
+codegen-units = 1

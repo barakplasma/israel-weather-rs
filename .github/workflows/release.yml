@@ -25,6 +25,7 @@ jobs:
       - name: Build
         run: cargo build --release
       - run: cp ./target/release/weather ./target/release/weather-${{ matrix.target }}
+      - uses: ./.github/actions/build-web
       - name: Build with web server
         run: cargo build --release --features server
       - run: cp ./target/release/weather ./target/release/weather-server-${{ matrix.target }}

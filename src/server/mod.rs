@@ -281,11 +281,45 @@ pub fn parse_schedule(expr: &str) -> Result<Schedule, String> {
     Schedule::from_str(&full).map_err(|e| format!("invalid cron expression {expr:?}: {e}"))
 }
 
-async fn index() -> impl IntoResponse {
-    (
-        [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
-        include_str!("index.html"),
-    )
+/// The web UI built by trunk: `(url path, content type, bytes, gzipped bytes)`; see build.rs.
+static WEB_ASSETS: &[(&str, &str, &[u8], &[u8])] =
+    include!(concat!(env!("OUT_DIR"), "/web_assets.rs"));
+
+/// Pages of the single-page app; each is served `index.html`.
+const PAGES: [&str; 2] = ["/", "/status"];
+
+async fn web_asset(uri: axum::http::Uri, headers: axum::http::HeaderMap) -> Response {
+    let path = uri.path().trim_end_matches('/');
+    let path = if path.is_empty() || PAGES.contains(&path) {
+        "/index.html"
+    } else {
+        path
+    };
+    let Some((_, content_type, bytes, gz)) = WEB_ASSETS.iter().find(|a| a.0 == path) else {
+        return (StatusCode::NOT_FOUND, "not found").into_response();
+    };
+    // trunk puts a content hash in asset names; the rest must be revalidated.
+    let hashed = !matches!(path, "/index.html" | "/sw.js" | "/manifest.webmanifest")
+        && !path.starts_with("/icon");
+    let cache = if hashed {
+        "public, max-age=31536000, immutable"
+    } else {
+        "no-cache"
+    };
+    let accepts_gzip = headers
+        .get(header::ACCEPT_ENCODING)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.contains("gzip"));
+    let mut response = if accepts_gzip && gz.len() < bytes.len() {
+        ([(header::CONTENT_ENCODING, "gzip")], *gz).into_response()
+    } else {
+        (*bytes).into_response()
+    };
+    let h = response.headers_mut();
+    h.insert(header::CONTENT_TYPE, HeaderValue::from_static(content_type));
+    h.insert(header::CACHE_CONTROL, HeaderValue::from_static(cache));
+    h.insert(header::VARY, HeaderValue::from_static("accept-encoding"));
+    response
 }
 
 async fn healthz(axum::extract::State(state): axum::extract::State<AppState>) -> Response {
@@ -305,7 +339,6 @@ async fn allow_any_origin(mut response: Response) -> Response {
 
 pub fn router(state: AppState) -> Router {
     Router::new()
-        .route("/", get(index))
         .route("/healthz", get(healthz))
         .route("/api/status", get(api::status))
         .route("/api/ims", get(api::extras))
@@ -323,6 +356,7 @@ pub fn router(state: AppState) -> Router {
             state.clone(),
             stats::track,
         ))
+        .fallback(web_asset)
         .layer(axum::middleware::map_response(allow_any_origin))
         .with_state(state)
 }
@@ -630,6 +664,19 @@ mod tests {
                 .starts_with("text/html")
         );
         assert!(body.contains("<title>"));
+        assert_eq!(headers[header::CACHE_CONTROL], "no-cache");
+
+        let (status, _, page) = request(state_at(NOW), "/status").await;
+        assert_eq!((status, page), (StatusCode::OK, body));
+        let (status, _, _) = request(state_at(NOW), "/nope.js").await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+    }
+
+    #[test]
+    fn web_assets_have_index_and_smaller_gzip_for_text() {
+        let (_, ty, bytes, gz) = WEB_ASSETS.iter().find(|a| a.0 == "/index.html").unwrap();
+        assert!(ty.starts_with("text/html"));
+        assert!(!bytes.is_empty() && !gz.is_empty());
     }
 
     #[tokio::test]
