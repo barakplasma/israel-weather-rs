@@ -167,6 +167,8 @@ How IMS data is adapted:
 - Fields IMS doesn't provide (pressure, cloud cover, ...) are omitted. Hours outside the forecast range are `null` in Open-Meteo responses.
 - Wind speed from IMS is km/h. MET responses convert it to m/s.
 
+Compatibility is checked in CI (`.github/workflows/compat.yml`) by running real third-party clients against a live server: [omgo](https://github.com/HectorMalot/omgo) (Go, Open-Meteo), [open-meteo](https://github.com/frenck/python-open-meteo) (Python, used by Home Assistant's Open-Meteo integration, forecast and geocoding), [PyMetno](https://github.com/Danielhiversen/pyMetno) (Home Assistant's Met.no integration) and [metno-locationforecast](https://github.com/Rory-Sullivan/metno-locationforecast). The tests are in `compat/`; run them locally with `WEATHER_BASE_URL=http://127.0.0.1:8080`. Open-Meteo's official SDKs (`openmeteo-requests` and friends) are not supported: they only speak FlatBuffers.
+
 Server settings (flags or env vars):
 
 | Flag | Env | Default |

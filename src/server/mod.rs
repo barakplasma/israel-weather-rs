@@ -543,10 +543,49 @@ pub async fn serve(opts: ServeOptions) -> Result<(), Box<dyn std::error::Error>>
         "weather server listening on http://{}",
         listener.local_addr()?
     );
-    axum::serve(listener, router(state))
-        .with_graceful_shutdown(shutdown_signal())
-        .await?;
+    serve_http1(listener, router(state)).await;
     Ok(())
+}
+
+/// Like `axum::serve`, but with Title-Case response header names. HTTP header names are
+/// case-insensitive, yet some MET Norway clients (e.g. `metno-locationforecast`) look up
+/// `Last-Modified` case-sensitively, and api.met.no sends it that way over HTTP/1.1.
+async fn serve_http1(listener: tokio::net::TcpListener, app: Router) {
+    use hyper_util::rt::TokioIo;
+    use hyper_util::server::graceful::GracefulShutdown;
+    use hyper_util::service::TowerToHyperService;
+
+    let graceful = GracefulShutdown::new();
+    let shutdown = shutdown_signal();
+    tokio::pin!(shutdown);
+    loop {
+        let (stream, peer) = tokio::select! {
+            accepted = listener.accept() => match accepted {
+                Ok(conn) => conn,
+                Err(e) => {
+                    // e.g. too many open files: back off instead of spinning.
+                    warn!("accept failed: {e}");
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                    continue;
+                }
+            },
+            _ = &mut shutdown => break,
+        };
+        let conn = hyper::server::conn::http1::Builder::new()
+            .title_case_headers(true)
+            .serve_connection(TokioIo::new(stream), TowerToHyperService::new(app.clone()));
+        let conn = graceful.watch(conn);
+        tokio::spawn(async move {
+            if let Err(e) = conn.await {
+                tracing::debug!(%peer, "connection error: {e}");
+            }
+        });
+    }
+    // Let in-flight requests finish, but don't hang on idle keep-alive clients.
+    tokio::select! {
+        _ = graceful.shutdown() => {}
+        _ = tokio::time::sleep(std::time::Duration::from_secs(10)) => {}
+    }
 }
 
 #[cfg(test)]
@@ -670,6 +709,31 @@ mod tests {
         assert_eq!((status, page), (StatusCode::OK, body));
         let (status, _, _) = request(state_at(NOW), "/nope.js").await;
         assert_eq!(status, StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn http1_headers_are_title_case() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(serve_http1(listener, router(state_at(NOW))));
+        let mut tcp = tokio::net::TcpStream::connect(addr).await.unwrap();
+        tcp.write_all(
+            b"GET /weatherapi/locationforecast/2.0/compact?lat=32.08&lon=34.78 HTTP/1.1\r\n\
+              Host: x\r\nConnection: close\r\n\r\n",
+        )
+        .await
+        .unwrap();
+        let mut raw = vec![];
+        tcp.read_to_end(&mut raw).await.unwrap();
+        let head = String::from_utf8_lossy(&raw);
+        let head = head.split("\r\n\r\n").next().unwrap();
+        assert!(head.starts_with("HTTP/1.1 200"), "{head}");
+        assert!(head.contains("\r\nLast-Modified: "), "{head}");
+        assert!(
+            head.contains("\r\nContent-Type: application/json"),
+            "{head}"
+        );
     }
 
     #[test]

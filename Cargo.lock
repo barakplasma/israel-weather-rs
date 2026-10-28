@@ -1400,6 +1400,8 @@ dependencies = [
  "cron",
  "flate2",
  "http-body-util",
+ "hyper",
+ "hyper-util",
  "openssl",
  "reqwest",
  "serde",
