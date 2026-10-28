@@ -1,13 +1,16 @@
 //! `weather serve`: an HTTP server that refreshes the IMS forecast on a cron schedule and serves
-//! - a small native JSON API (`/api/...`),
-//! - an Open-Meteo compatible `/v1/forecast`,
+//! - an Open-Meteo compatible `/v1/forecast` and geocoding `/v1/search`,
 //! - a MET Norway (api.met.no) compatible `/weatherapi/locationforecast/2.0/{compact,complete}`,
+//! - IMS-only extras at `/api/ims` and server status at `/api/status`,
 //! - an embedded web UI at `/`.
+//!
+//! Response types live in the `weather-api` crate, shared with the web UI.
 
 mod api;
 pub mod codes;
 mod metno;
 mod openmeteo;
+mod stats;
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -23,6 +26,7 @@ use chrono_tz::Asia::Jerusalem;
 use cron::Schedule;
 use serde_json::json;
 use tracing::{error, info, warn};
+use weather_api::status::{Refresh, SourceResult};
 
 use crate::hourly::{HourlyPoint, expand_hourly, merge_hourly};
 use crate::ims_json::{self, CountryForecast, DailySummary, FullForecast, LocationRegion, Warning};
@@ -127,6 +131,7 @@ pub struct AppState {
     next_refresh: Arc<RwLock<Option<DateTime<Utc>>>>,
     schedule: Arc<str>,
     clock: Clock,
+    stats: Arc<stats::Stats>,
 }
 
 impl AppState {
@@ -135,6 +140,7 @@ impl AppState {
             snapshot: Arc::default(),
             next_refresh: Arc::default(),
             schedule: schedule.into(),
+            stats: Arc::new(stats::Stats::new(clock())),
             clock,
         }
     }
@@ -275,11 +281,45 @@ pub fn parse_schedule(expr: &str) -> Result<Schedule, String> {
     Schedule::from_str(&full).map_err(|e| format!("invalid cron expression {expr:?}: {e}"))
 }
 
-async fn index() -> impl IntoResponse {
-    (
-        [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
-        include_str!("index.html"),
-    )
+/// The web UI built by trunk: `(url path, content type, bytes, gzipped bytes)`; see build.rs.
+static WEB_ASSETS: &[(&str, &str, &[u8], &[u8])] =
+    include!(concat!(env!("OUT_DIR"), "/web_assets.rs"));
+
+/// Pages of the single-page app; each is served `index.html`.
+const PAGES: [&str; 2] = ["/", "/status"];
+
+async fn web_asset(uri: axum::http::Uri, headers: axum::http::HeaderMap) -> Response {
+    let path = uri.path().trim_end_matches('/');
+    let path = if path.is_empty() || PAGES.contains(&path) {
+        "/index.html"
+    } else {
+        path
+    };
+    let Some((_, content_type, bytes, gz)) = WEB_ASSETS.iter().find(|a| a.0 == path) else {
+        return (StatusCode::NOT_FOUND, "not found").into_response();
+    };
+    // trunk puts a content hash in asset names; the rest must be revalidated.
+    let hashed = !matches!(path, "/index.html" | "/sw.js" | "/manifest.webmanifest")
+        && !path.starts_with("/icon");
+    let cache = if hashed {
+        "public, max-age=31536000, immutable"
+    } else {
+        "no-cache"
+    };
+    let accepts_gzip = headers
+        .get(header::ACCEPT_ENCODING)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.contains("gzip"));
+    let mut response = if accepts_gzip && gz.len() < bytes.len() {
+        ([(header::CONTENT_ENCODING, "gzip")], *gz).into_response()
+    } else {
+        (*bytes).into_response()
+    };
+    let h = response.headers_mut();
+    h.insert(header::CONTENT_TYPE, HeaderValue::from_static(content_type));
+    h.insert(header::CACHE_CONTROL, HeaderValue::from_static(cache));
+    h.insert(header::VARY, HeaderValue::from_static("accept-encoding"));
+    response
 }
 
 async fn healthz(axum::extract::State(state): axum::extract::State<AppState>) -> Response {
@@ -299,12 +339,11 @@ async fn allow_any_origin(mut response: Response) -> Response {
 
 pub fn router(state: AppState) -> Router {
     Router::new()
-        .route("/", get(index))
         .route("/healthz", get(healthz))
         .route("/api/status", get(api::status))
-        .route("/api/locations", get(api::locations))
-        .route("/api/forecast", get(api::forecast))
+        .route("/api/ims", get(api::extras))
         .route("/v1/forecast", get(openmeteo::forecast))
+        .route("/v1/search", get(api::search))
         .route(
             "/weatherapi/locationforecast/2.0/compact",
             get(metno::compact),
@@ -313,6 +352,11 @@ pub fn router(state: AppState) -> Router {
             "/weatherapi/locationforecast/2.0/complete",
             get(metno::compact),
         )
+        .route_layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            stats::track,
+        ))
+        .fallback(web_asset)
         .layer(axum::middleware::map_response(allow_any_origin))
         .with_state(state)
 }
@@ -326,12 +370,27 @@ pub struct RefreshOptions {
     pub ims_json: bool,
 }
 
-fn fetch_extras(offline: bool, prev: Extras, now: DateTime<Utc>) -> Extras {
-    fn ok_or_warn<T>(what: &str, r: Result<T, crate::Error>) -> Option<T> {
+/// Each source's outcome is appended to `results`.
+fn fetch_extras(
+    offline: bool,
+    prev: Extras,
+    now: DateTime<Utc>,
+    results: &mut Vec<SourceResult>,
+) -> Extras {
+    fn ok_or_warn<T>(
+        results: &mut Vec<SourceResult>,
+        what: &str,
+        r: Result<T, crate::Error>,
+    ) -> Option<T> {
+        results.push(SourceResult {
+            name: what.into(),
+            error: r.as_ref().err().map(ToString::to_string),
+        });
         r.inspect_err(|e| warn!("{what} unavailable, keeping previous copy: {e}"))
             .ok()
     }
     let full = ok_or_warn(
+        results,
         "IMS hourly forecast",
         ims_json::fetch(
             ims_json::FULL_FORECAST,
@@ -340,6 +399,7 @@ fn fetch_extras(offline: bool, prev: Extras, now: DateTime<Utc>) -> Extras {
         ),
     );
     let metadata = ok_or_warn(
+        results,
         "IMS warnings metadata",
         ims_json::fetch(ims_json::WARNINGS_METADATA, offline, |s| {
             serde_json::from_str::<serde_json::Value>(s)?;
@@ -347,12 +407,14 @@ fn fetch_extras(offline: bool, prev: Extras, now: DateTime<Utc>) -> Extras {
         }),
     );
     let warnings = ok_or_warn(
+        results,
         "IMS warnings",
         ims_json::fetch(ims_json::WARNINGS, offline, |s| {
             ims_json::parse_warnings(s, metadata.as_deref())
         }),
     );
     let regions = ok_or_warn(
+        results,
         "IMS location regions",
         ims_json::fetch(
             ims_json::LOCATIONS_INFO,
@@ -378,16 +440,29 @@ pub async fn refresh(state: &AppState, opts: RefreshOptions) {
     let prev = state.snapshot();
     let prev_extras = prev.as_ref().map(|s| s.extras.clone()).unwrap_or_default();
     let now = state.now();
+    let started = std::time::Instant::now();
     let result = tokio::task::spawn_blocking(move || {
         let xml = crate::get_israeli_weather_forecast(opts.offline);
+        let mut sources = vec![SourceResult {
+            name: "forecast xml".into(),
+            error: xml.as_ref().err().map(ToString::to_string),
+        }];
         let extras = if opts.ims_json {
-            fetch_extras(opts.offline, prev_extras, now)
+            fetch_extras(opts.offline, prev_extras, now, &mut sources)
         } else {
             Extras::default()
         };
-        (xml, extras)
+        (xml, extras, sources)
     })
     .await;
+    let result = result.map(|(xml, extras, sources)| {
+        state.stats.record_refresh(Refresh {
+            started_at: now,
+            duration_ms: started.elapsed().as_millis() as u64,
+            sources,
+        });
+        (xml, extras)
+    });
     match result {
         Ok((Ok(data), extras)) => {
             let locations = data.location.len();
@@ -468,10 +543,49 @@ pub async fn serve(opts: ServeOptions) -> Result<(), Box<dyn std::error::Error>>
         "weather server listening on http://{}",
         listener.local_addr()?
     );
-    axum::serve(listener, router(state))
-        .with_graceful_shutdown(shutdown_signal())
-        .await?;
+    serve_http1(listener, router(state)).await;
     Ok(())
+}
+
+/// Like `axum::serve`, but with Title-Case response header names. HTTP header names are
+/// case-insensitive, yet some MET Norway clients (e.g. `metno-locationforecast`) look up
+/// `Last-Modified` case-sensitively, and api.met.no sends it that way over HTTP/1.1.
+async fn serve_http1(listener: tokio::net::TcpListener, app: Router) {
+    use hyper_util::rt::TokioIo;
+    use hyper_util::server::graceful::GracefulShutdown;
+    use hyper_util::service::TowerToHyperService;
+
+    let graceful = GracefulShutdown::new();
+    let shutdown = shutdown_signal();
+    tokio::pin!(shutdown);
+    loop {
+        let (stream, peer) = tokio::select! {
+            accepted = listener.accept() => match accepted {
+                Ok(conn) => conn,
+                Err(e) => {
+                    // e.g. too many open files: back off instead of spinning.
+                    warn!("accept failed: {e}");
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                    continue;
+                }
+            },
+            _ = &mut shutdown => break,
+        };
+        let conn = hyper::server::conn::http1::Builder::new()
+            .title_case_headers(true)
+            .serve_connection(TokioIo::new(stream), TowerToHyperService::new(app.clone()));
+        let conn = graceful.watch(conn);
+        tokio::spawn(async move {
+            if let Err(e) = conn.await {
+                tracing::debug!(%peer, "connection error: {e}");
+            }
+        });
+    }
+    // Let in-flight requests finish, but don't hang on idle keep-alive clients.
+    tokio::select! {
+        _ = graceful.shutdown() => {}
+        _ = tokio::time::sleep(std::time::Duration::from_secs(10)) => {}
+    }
 }
 
 #[cfg(test)]
@@ -589,6 +703,44 @@ mod tests {
                 .starts_with("text/html")
         );
         assert!(body.contains("<title>"));
+        assert_eq!(headers[header::CACHE_CONTROL], "no-cache");
+
+        let (status, _, page) = request(state_at(NOW), "/status").await;
+        assert_eq!((status, page), (StatusCode::OK, body));
+        let (status, _, _) = request(state_at(NOW), "/nope.js").await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn http1_headers_are_title_case() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(serve_http1(listener, router(state_at(NOW))));
+        let mut tcp = tokio::net::TcpStream::connect(addr).await.unwrap();
+        tcp.write_all(
+            b"GET /weatherapi/locationforecast/2.0/compact?lat=32.08&lon=34.78 HTTP/1.1\r\n\
+              Host: x\r\nConnection: close\r\n\r\n",
+        )
+        .await
+        .unwrap();
+        let mut raw = vec![];
+        tcp.read_to_end(&mut raw).await.unwrap();
+        let head = String::from_utf8_lossy(&raw);
+        let head = head.split("\r\n\r\n").next().unwrap();
+        assert!(head.starts_with("HTTP/1.1 200"), "{head}");
+        assert!(head.contains("\r\nLast-Modified: "), "{head}");
+        assert!(
+            head.contains("\r\nContent-Type: application/json"),
+            "{head}"
+        );
+    }
+
+    #[test]
+    fn web_assets_have_index_and_smaller_gzip_for_text() {
+        let (_, ty, bytes, gz) = WEB_ASSETS.iter().find(|a| a.0 == "/index.html").unwrap();
+        assert!(ty.starts_with("text/html"));
+        assert!(!bytes.is_empty() && !gz.is_empty());
     }
 
     #[tokio::test]
@@ -598,7 +750,7 @@ mod tests {
             request(empty.clone(), "/healthz").await.0,
             StatusCode::SERVICE_UNAVAILABLE
         );
-        let (status, json) = get_json(empty, "/api/locations").await;
+        let (status, json) = get_json(empty, "/v1/search?name=haifa").await;
         assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
         assert_eq!(json["error"], true);
         assert_eq!(request(state_at(NOW), "/healthz").await.0, StatusCode::OK);
@@ -606,7 +758,7 @@ mod tests {
 
     #[tokio::test]
     async fn cors_header_on_api_responses() {
-        let (_, headers, _) = request(state_at(NOW), "/api/locations").await;
+        let (_, headers, _) = request(state_at(NOW), "/v1/search?name=haifa").await;
         assert_eq!(headers[header::ACCESS_CONTROL_ALLOW_ORIGIN], "*");
     }
 

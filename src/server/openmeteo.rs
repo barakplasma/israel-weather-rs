@@ -15,7 +15,11 @@ use axum::extract::{Query, State};
 use chrono::{DateTime, Duration, NaiveDate, Offset, TimeZone, Utc};
 use chrono_tz::Tz;
 use serde::Deserialize;
-use serde_json::{Map, Value, json};
+use serde_json::{Number, Value, json};
+
+use weather_api::openmeteo::{
+    self as om, Current, CurrentWeather, DailyVar, HourlyVar, Series, Time,
+};
 
 use super::codes::{is_day, wmo_code};
 use super::{ApiError, AppState, LocationQuery, resolve, round};
@@ -151,59 +155,26 @@ impl Units {
     }
 }
 
-/// Hourly / current variables, including legacy aliases.
-#[derive(Clone, Copy)]
-enum HourlyVar {
-    Temperature,
-    RelativeHumidity,
-    DewPoint,
-    ApparentTemperature,
-    Precipitation,
-    Rain,
-    ZeroPrecip, // showers / snowfall: IMS does not split these out
-    WeatherCode,
-    WindSpeed,
-    WindDirection,
-    UvIndex,
-    IsDay,
-    PrecipitationProbability,
-    WindGusts,
+/// How this server computes each variable from IMS data.
+trait HourlyCalc {
+    fn unit(self, u: &Units) -> &'static str;
+    fn value(self, p: &HourlyPoint, u: &Units, lat: f64, lon: f64) -> Value;
 }
 
-impl HourlyVar {
-    fn parse(name: &str) -> Option<Self> {
-        Some(match name {
-            "temperature_2m" => Self::Temperature,
-            "relative_humidity_2m" | "relativehumidity_2m" => Self::RelativeHumidity,
-            "dew_point_2m" | "dewpoint_2m" => Self::DewPoint,
-            "apparent_temperature" => Self::ApparentTemperature,
-            "precipitation" => Self::Precipitation,
-            "rain" => Self::Rain,
-            "showers" | "snowfall" => Self::ZeroPrecip,
-            "weather_code" | "weathercode" => Self::WeatherCode,
-            "wind_speed_10m" | "windspeed_10m" => Self::WindSpeed,
-            "wind_direction_10m" | "winddirection_10m" => Self::WindDirection,
-            "uv_index" => Self::UvIndex,
-            "is_day" => Self::IsDay,
-            "precipitation_probability" => Self::PrecipitationProbability,
-            "wind_gusts_10m" | "windgusts_10m" => Self::WindGusts,
-            _ => return None,
-        })
-    }
-
-    fn unit(self, u: &Units, name: &str) -> &'static str {
+impl HourlyCalc for HourlyVar {
+    fn unit(self, u: &Units) -> &'static str {
         match self {
             Self::Temperature | Self::DewPoint | Self::ApparentTemperature => u.temp_unit(),
             Self::RelativeHumidity => "%",
             Self::Precipitation | Self::Rain => u.precip_unit(),
-            Self::ZeroPrecip if name == "snowfall" => {
+            Self::Snowfall => {
                 if u.inch {
                     "inch"
                 } else {
                     "cm"
                 }
             }
-            Self::ZeroPrecip => u.precip_unit(),
+            Self::Showers => u.precip_unit(),
             Self::WeatherCode => "wmo code",
             Self::WindSpeed | Self::WindGusts => u.wind_unit(),
             Self::WindDirection => "°",
@@ -219,7 +190,8 @@ impl HourlyVar {
             Self::DewPoint => json!(u.temp(p.dew_point)),
             Self::ApparentTemperature => json!(u.temp(p.feels_like)),
             Self::Precipitation | Self::Rain => json!(u.precip(p.precipitation)),
-            Self::ZeroPrecip => json!(0.0),
+            // IMS does not split these out.
+            Self::Showers | Self::Snowfall => json!(0.0),
             Self::WeatherCode => json!(wmo_code(p.weather_code)),
             Self::WindSpeed => json!(u.wind(p.wind_speed)),
             Self::WindDirection => json!(p.wind_direction.round() as i64),
@@ -236,43 +208,12 @@ impl HourlyVar {
     }
 }
 
-#[derive(Clone, Copy)]
-enum DailyVar {
-    TemperatureMax,
-    TemperatureMin,
-    ApparentMax,
-    ApparentMin,
-    PrecipitationSum,
-    PrecipitationHours,
-    WeatherCode,
-    WindSpeedMax,
-    WindDirectionDominant,
-    UvIndexMax,
-    PrecipitationProbabilityMax,
-    WindGustsMax,
+trait DailyCalc {
+    fn unit(self, u: &Units) -> &'static str;
+    fn value(self, day: &[&HourlyPoint], ims: Option<&DailySummary>, u: &Units) -> Value;
 }
 
-impl DailyVar {
-    fn parse(name: &str) -> Option<Self> {
-        Some(match name {
-            "temperature_2m_max" => Self::TemperatureMax,
-            "temperature_2m_min" => Self::TemperatureMin,
-            "apparent_temperature_max" => Self::ApparentMax,
-            "apparent_temperature_min" => Self::ApparentMin,
-            "precipitation_sum" | "rain_sum" => Self::PrecipitationSum,
-            "precipitation_hours" => Self::PrecipitationHours,
-            "weather_code" | "weathercode" => Self::WeatherCode,
-            "wind_speed_10m_max" | "windspeed_10m_max" => Self::WindSpeedMax,
-            "wind_direction_10m_dominant" | "winddirection_10m_dominant" => {
-                Self::WindDirectionDominant
-            }
-            "uv_index_max" => Self::UvIndexMax,
-            "precipitation_probability_max" => Self::PrecipitationProbabilityMax,
-            "wind_gusts_10m_max" | "windgusts_10m_max" => Self::WindGustsMax,
-            _ => return None,
-        })
-    }
-
+impl DailyCalc for DailyVar {
     fn unit(self, u: &Units) -> &'static str {
         match self {
             Self::TemperatureMax | Self::TemperatureMin | Self::ApparentMax | Self::ApparentMin => {
@@ -288,7 +229,7 @@ impl DailyVar {
         }
     }
 
-    /// `ims` is IMS's own daily summary, passed only when the requested days are Israel days.
+    // `ims` is IMS's own daily summary, passed only when the requested days are Israel days.
     fn value(self, day: &[&HourlyPoint], ims: Option<&DailySummary>, u: &Units) -> Value {
         if day.is_empty() {
             return Value::Null;
@@ -396,23 +337,23 @@ struct TimeFormat {
 }
 
 impl TimeFormat {
-    fn hour(&self, t: DateTime<Utc>) -> Value {
+    fn hour(&self, t: DateTime<Utc>) -> Time {
         if self.unix {
-            json!(t.timestamp())
+            Time::Unix(t.timestamp())
         } else {
-            json!(
+            Time::Iso(
                 t.with_timezone(&self.tz)
                     .format("%Y-%m-%dT%H:%M")
-                    .to_string()
+                    .to_string(),
             )
         }
     }
 
-    fn day(&self, date: NaiveDate) -> Value {
+    fn day(&self, date: NaiveDate) -> Time {
         if self.unix {
-            json!(local_midnight(self.tz, date).timestamp())
+            Time::Unix(local_midnight(self.tz, date).timestamp())
         } else {
-            json!(date.format("%Y-%m-%d").to_string())
+            Time::Iso(date.format("%Y-%m-%d").to_string())
         }
     }
 
@@ -424,7 +365,7 @@ impl TimeFormat {
 pub async fn forecast(
     State(state): State<AppState>,
     Query(params): Query<Params>,
-) -> Result<Json<Value>, ApiError> {
+) -> Result<Json<om::Forecast>, ApiError> {
     let started = std::time::Instant::now();
     let (Some(lat), Some(lon)) = (params.latitude, params.longitude) else {
         return Err(ApiError::bad_request(
@@ -470,66 +411,70 @@ pub async fn forecast(
         .take((past_days + forecast_days) as usize)
         .collect();
 
-    let mut body = Map::new();
-    body.insert("latitude".into(), json!(round(loc_lat, 4)));
-    body.insert("longitude".into(), json!(round(loc_lon, 4)));
-    body.insert(
-        "generationtime_ms".into(),
-        json!(started.elapsed().as_secs_f64() * 1000.0),
-    );
-    body.insert(
-        "utc_offset_seconds".into(),
-        json!(now_local.offset().fix().local_minus_utc()),
-    );
-    body.insert("timezone".into(), json!(tz_name));
-    body.insert(
-        "timezone_abbreviation".into(),
-        json!(now_local.format("%Z").to_string()),
-    );
-    body.insert("elevation".into(), json!(meta.display_height));
+    let units_map = |pairs: Vec<(&str, &str)>| -> om::Units {
+        pairs
+            .into_iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
+    };
+    let mut body = om::Forecast {
+        latitude: round(loc_lat, 4),
+        longitude: round(loc_lon, 4),
+        generationtime_ms: 0.0,
+        utc_offset_seconds: now_local.offset().fix().local_minus_utc(),
+        timezone: tz_name,
+        timezone_abbreviation: now_local.format("%Z").to_string(),
+        elevation: meta.display_height as f64,
+        current_units: None,
+        current: None,
+        current_weather_units: None,
+        current_weather: None,
+        hourly_units: None,
+        hourly: None,
+        daily_units: None,
+        daily: None,
+    };
 
     if params.current_weather == Some(true) || !current_vars.is_empty() {
         let hour_start = now.timestamp() - now.timestamp().rem_euclid(3600);
         let point = by_time.get(&hour_start).copied();
         let hour = DateTime::from_timestamp(hour_start, 0).expect("valid timestamp");
-        let value =
-            |v: HourlyVar| point.map_or(Value::Null, |p| v.value(p, &units, loc_lat, loc_lon));
+        let value = |v: HourlyVar| point.and_then(|p| num(v.value(p, &units, loc_lat, loc_lon)));
 
         if !current_vars.is_empty() {
-            let mut cur_units = Map::new();
-            let mut cur = Map::new();
-            cur_units.insert("time".into(), json!(fmt.unit()));
-            cur_units.insert("interval".into(), json!("seconds"));
-            cur.insert("time".into(), fmt.hour(hour));
-            cur.insert("interval".into(), json!(3600));
+            let mut cur_units = units_map(vec![("time", fmt.unit()), ("interval", "seconds")]);
             for (name, var) in &current_vars {
-                cur_units.insert((*name).into(), json!(var.unit(&units, name)));
-                cur.insert((*name).into(), value(*var));
+                cur_units.insert((*name).into(), var.unit(&units).into());
             }
-            body.insert("current_units".into(), Value::Object(cur_units));
-            body.insert("current".into(), Value::Object(cur));
+            body.current_units = Some(cur_units);
+            body.current = Some(Current {
+                time: fmt.hour(hour),
+                interval: 3600,
+                values: current_vars
+                    .iter()
+                    .map(|(name, var)| ((*name).to_string(), value(*var)))
+                    .collect(),
+            });
         }
         if params.current_weather == Some(true) {
-            body.insert(
-                "current_weather_units".into(),
-                json!({
-                    "time": fmt.unit(), "interval": "seconds",
-                    "temperature": units.temp_unit(), "windspeed": units.wind_unit(),
-                    "winddirection": "°", "is_day": "", "weathercode": "wmo code",
-                }),
-            );
-            body.insert(
-                "current_weather".into(),
-                json!({
-                    "time": fmt.hour(hour),
-                    "interval": 3600,
-                    "temperature": value(HourlyVar::Temperature),
-                    "windspeed": value(HourlyVar::WindSpeed),
-                    "winddirection": value(HourlyVar::WindDirection),
-                    "is_day": value(HourlyVar::IsDay),
-                    "weathercode": value(HourlyVar::WeatherCode),
-                }),
-            );
+            body.current_weather_units = Some(units_map(vec![
+                ("time", fmt.unit()),
+                ("interval", "seconds"),
+                ("temperature", units.temp_unit()),
+                ("windspeed", units.wind_unit()),
+                ("winddirection", "°"),
+                ("is_day", ""),
+                ("weathercode", "wmo code"),
+            ]));
+            body.current_weather = Some(CurrentWeather {
+                time: fmt.hour(hour),
+                interval: 3600,
+                temperature: value(HourlyVar::Temperature),
+                windspeed: value(HourlyVar::WindSpeed),
+                winddirection: value(HourlyVar::WindDirection),
+                is_day: value(HourlyVar::IsDay),
+                weathercode: value(HourlyVar::WeatherCode),
+            });
         }
     }
 
@@ -543,27 +488,28 @@ pub async fn forecast(
             .take_while(|t| *t < end)
             .collect();
 
-        let mut h_units = Map::new();
-        let mut hourly = Map::new();
-        h_units.insert("time".into(), json!(fmt.unit()));
-        hourly.insert(
-            "time".into(),
-            hours.iter().map(|t| fmt.hour(*t)).collect::<Value>(),
-        );
+        let mut h_units = units_map(vec![("time", fmt.unit())]);
         for (name, var) in &hourly_vars {
-            h_units.insert((*name).into(), json!(var.unit(&units, name)));
-            let values: Value = hours
-                .iter()
-                .map(|t| {
-                    by_time
-                        .get(&t.timestamp())
-                        .map_or(Value::Null, |p| var.value(p, &units, loc_lat, loc_lon))
-                })
-                .collect();
-            hourly.insert((*name).into(), values);
+            h_units.insert((*name).into(), var.unit(&units).into());
         }
-        body.insert("hourly_units".into(), Value::Object(h_units));
-        body.insert("hourly".into(), Value::Object(hourly));
+        body.hourly_units = Some(h_units);
+        body.hourly = Some(Series {
+            time: hours.iter().map(|t| fmt.hour(*t)).collect(),
+            values: hourly_vars
+                .iter()
+                .map(|(name, var)| {
+                    let values = hours
+                        .iter()
+                        .map(|t| {
+                            by_time
+                                .get(&t.timestamp())
+                                .and_then(|p| num(var.value(p, &units, loc_lat, loc_lon)))
+                        })
+                        .collect();
+                    ((*name).to_string(), values)
+                })
+                .collect(),
+        });
     }
 
     if !daily_vars.is_empty() {
@@ -582,13 +528,6 @@ pub async fn forecast(
             })
             .collect();
 
-        let mut d_units = Map::new();
-        let mut daily = Map::new();
-        d_units.insert("time".into(), json!(fmt.unit()));
-        daily.insert(
-            "time".into(),
-            days.iter().map(|d| fmt.day(*d)).collect::<Value>(),
-        );
         // IMS daily summaries are for Israel calendar days.
         let israel_days = matches!(tz.name(), "Asia/Jerusalem" | "Asia/Tel_Aviv" | "Israel");
         let ims_daily = |d: &NaiveDate| {
@@ -596,22 +535,37 @@ pub async fn forecast(
                 .then(|| resolved.daily.iter().find(|s| s.date == *d))
                 .flatten()
         };
+        let mut d_units = units_map(vec![("time", fmt.unit())]);
         for (name, var) in &daily_vars {
-            d_units.insert((*name).into(), json!(var.unit(&units)));
-            daily.insert(
-                (*name).into(),
-                buckets
-                    .iter()
-                    .zip(&days)
-                    .map(|(b, d)| var.value(b, ims_daily(d), &units))
-                    .collect::<Value>(),
-            );
+            d_units.insert((*name).into(), var.unit(&units).into());
         }
-        body.insert("daily_units".into(), Value::Object(d_units));
-        body.insert("daily".into(), Value::Object(daily));
+        body.daily_units = Some(d_units);
+        body.daily = Some(Series {
+            time: days.iter().map(|d| fmt.day(*d)).collect(),
+            values: daily_vars
+                .iter()
+                .map(|(name, var)| {
+                    let values = buckets
+                        .iter()
+                        .zip(&days)
+                        .map(|(b, d)| num(var.value(b, ims_daily(d), &units)))
+                        .collect();
+                    ((*name).to_string(), values)
+                })
+                .collect(),
+        });
     }
 
-    Ok(Json(Value::Object(body)))
+    body.generationtime_ms = started.elapsed().as_secs_f64() * 1000.0;
+    Ok(Json(body))
+}
+
+/// A computed value as a JSON number; `null` (or anything else) becomes `None`.
+fn num(v: Value) -> Option<Number> {
+    match v {
+        Value::Number(n) => Some(n),
+        _ => None,
+    }
 }
 
 #[cfg(test)]

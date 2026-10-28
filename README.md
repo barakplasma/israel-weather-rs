@@ -107,10 +107,20 @@ cargo install --path .
 Build with the `server` feature to get `weather serve`. It refreshes the IMS forecast on a cron schedule and serves a web UI plus weather APIs that existing clients already speak. Pre-built binaries are published as `weather-server-<target>` on the releases page.
 
 ```sh
-cargo install --git https://github.com/barakplasma/israel-weather-rs --features server
 weather serve --listen 0.0.0.0:8080 --schedule "7 * * * *"
-# open http://localhost:8080
+# open http://localhost:8080 (forecast) or http://localhost:8080/status (server status)
 ```
+
+Building it yourself: the web UI is a [Leptos](https://leptos.dev) app in `web/`, compiled to WebAssembly with [trunk](https://trunkrs.dev) and embedded in the binary, so build it first:
+
+```sh
+rustup target add wasm32-unknown-unknown
+cargo install trunk --locked
+(cd web && trunk build --release)
+cargo build --release --features server
+```
+
+Release builds refuse to build without `web/dist`; debug builds and tests embed a placeholder page instead. After a UI change, run `trunk build` again and rebuild the server.
 
 ```mermaid
 flowchart LR
@@ -118,18 +128,25 @@ flowchart LR
   Cache --> Parse[parse + Asia/Jerusalem times]
   JSON[(IMS website JSON<br/>hourly forecast + warnings)] -->|cron refresh| Snap
   Parse --> Snap[in-memory snapshot<br/>hourly rows, warnings]
-  Snap --> UI["/ web UI"]
-  Snap --> Native["/api/forecast, /api/locations, /api/status"]
-  Snap --> OM["/v1/forecast<br/>Open-Meteo compatible"]
+  Snap --> OM["/v1/forecast, /v1/search<br/>Open-Meteo compatible"]
   Snap --> MET["/weatherapi/locationforecast/2.0/compact<br/>MET Norway compatible"]
+  Snap --> Extras["/api/ims<br/>warnings, country forecast"]
+  Snap --> Status["/api/status"]
+  Types[["weather-api crate<br/>shared response types"]] -.- OM & Extras & Status
+  UI["web UI (Leptos/WASM, embedded)"] -->|fetch| OM & Extras & Status
+  Types -.- UI
 ```
+
+The server serializes, and the web UI deserializes, the same structs from `crates/weather-api`, so a change to a response shape fails to compile on the side that wasn't updated.
 
 | Endpoint | Compatible with | Notes |
 |---|---|---|
-| `/` | | Web UI: search locations, "near me", IMS warnings, 48h chart, hourly forecast by day with rain chance and gusts |
-| `/api/forecast?location=Haifa` or `?lat=..&lon=..` | | `hourly` rows from the current hour, IMS `daily` summaries, active `warnings`, `country_forecast` text, plus the raw 6-hourly XML `forecasts`. Optional `hours=` |
-| `/api/locations`, `/api/status`, `/healthz` | | Location list, refresh status, health check (503 until data is loaded) |
+| `/` | | Web UI: location search, "near me", IMS warnings, 24h condition strip with rain bars and start/end times, week list with per-day graphs; tap or drag any chart for hourly values. Installable (PWA) and works offline with the last forecast viewed |
+| `/status` | | Status page for `/api/status`, refreshing every 30 s |
 | `/v1/forecast?latitude=..&longitude=..` | [Open-Meteo](https://open-meteo.com/en/docs) | `hourly`, `daily`, `current`, `current_weather`, `timezone` (`GMT`, `auto`, IANA), `timeformat`, `forecast_days`, `past_days`, temperature/wind/precipitation units |
+| `/v1/search?name=..&count=..` | [Open-Meteo geocoding](https://open-meteo.com/en/docs/geocoding-api) | The IMS locations, case-insensitive, name-prefix matches first. `results` is omitted when nothing matches |
+| `/api/ims?latitude=..&longitude=..` | | Nearest IMS location (and distance), its active and upcoming `warnings`, today's written `country_forecast` |
+| `/api/status`, `/healthz` | | Data loaded (hourly rows by source, forecast range), cache files, last 24 refreshes with per-source errors, per-route request counts/latency, version/commit/memory. Health check is 503 until data is loaded |
 | `/weatherapi/locationforecast/2.0/compact?lat=..&lon=..` (and `/complete`) | [MET Norway](https://api.met.no/weatherapi/locationforecast/2.0/documentation) | GeoJSON `timeseries` with `instant`, `next_1_hours`, `next_6_hours`, `next_12_hours`. Sends `Last-Modified`/`Expires` |
 
 Data sources, refreshed together on the schedule:
@@ -144,11 +161,13 @@ The website JSON endpoints are undocumented, so parsing is lenient and every par
 
 How IMS data is adapted:
 - Coordinates resolve to the **nearest IMS location**. Requests more than 100 km from any IMS location get a 400.
-- Hourly rows come straight from IMS's hourly JSON. Beyond its 7 days, or without it, hours between the 6-hourly XML samples are **linearly interpolated** (rain as an hourly rate), with the weather code from the nearest sample. `/api/forecast` marks each row `"source": "ims"` or `"interpolated"`.
+- Hourly rows come straight from IMS's hourly JSON. Beyond its 7 days, or without it, hours between the 6-hourly XML samples are **linearly interpolated** (rain as an hourly rate), with the weather code from the nearest sample. `/api/status` counts how many rows are each.
 - IMS weather codes are mapped to [WMO codes](https://open-meteo.com/en/docs#weather_variable_documentation) (Open-Meteo) and MET `symbol_code`s, using day/night variants from the sun's position.
 - Rain chance and gusts are served as Open-Meteo `precipitation_probability` / `wind_gusts_10m` (and daily maxima) and MET `probability_of_precipitation` / `wind_speed_of_gust`. They're `null`/omitted for interpolated hours.
 - Fields IMS doesn't provide (pressure, cloud cover, ...) are omitted. Hours outside the forecast range are `null` in Open-Meteo responses.
 - Wind speed from IMS is km/h. MET responses convert it to m/s.
+
+Compatibility is checked in CI (`.github/workflows/compat.yml`) by running real third-party clients against a live server: [omgo](https://github.com/HectorMalot/omgo) (Go, Open-Meteo), [open-meteo](https://github.com/frenck/python-open-meteo) (Python, used by Home Assistant's Open-Meteo integration, forecast and geocoding), [PyMetno](https://github.com/Danielhiversen/pyMetno) (Home Assistant's Met.no integration) and [metno-locationforecast](https://github.com/Rory-Sullivan/metno-locationforecast). The tests are in `compat/`; run them locally with `WEATHER_BASE_URL=http://127.0.0.1:8080`. Open-Meteo's official SDKs (`openmeteo-requests` and friends) are not supported: they only speak FlatBuffers.
 
 Server settings (flags or env vars):
 

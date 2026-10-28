@@ -1,0 +1,13 @@
+name: Build web UI
+description: Build web/dist with trunk, for `--features server` builds to embed.
+runs:
+  using: composite
+  steps:
+    - run: rustup target add wasm32-unknown-unknown
+      shell: bash
+    - uses: taiki-e/install-action@v2
+      with:
+        tool: trunk
+    - run: trunk build --release
+      shell: bash
+      working-directory: web

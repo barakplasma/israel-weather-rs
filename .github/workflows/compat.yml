@@ -1,0 +1,50 @@
+name: Client compatibility
+
+# Third-party Open-Meteo and MET Norway clients against a live `weather serve`.
+# Uses the real IMS forecast, so an IMS outage fails this job, not the build.
+
+on:
+  pull_request:
+  push:
+    branches: [ "master" ]
+  schedule:
+    - cron: "23 4 * * *"
+  workflow_dispatch:
+
+jobs:
+  clients:
+    runs-on: ubuntu-latest
+    env:
+      WEATHER_BASE_URL: http://127.0.0.1:8080
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
+      # A debug build embeds a placeholder UI; only the APIs matter here.
+      - run: cargo build --features server
+      - name: Start server
+        run: |
+          ./target/debug/weather serve --listen 127.0.0.1:8080 > server.log 2>&1 &
+          for i in $(seq 1 120); do
+            curl -sf "$WEATHER_BASE_URL/healthz" && exit 0
+            sleep 1
+          done
+          cat server.log
+          exit 1
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: compat/go/go.mod
+          cache-dependency-path: compat/go/go.sum
+      - name: Go (omgo)
+        working-directory: compat/go
+        run: go test -count=1 -v ./...
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: compat/python/requirements.txt
+      - run: pip install -r compat/python/requirements.txt
+      - name: Python (open-meteo, PyMetno, metno-locationforecast)
+        working-directory: compat/python
+        run: python -m pytest -v
+      - if: failure()
+        run: cat server.log

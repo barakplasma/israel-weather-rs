@@ -70,6 +70,7 @@ jobs:
     - uses: actions/checkout@v7
     - uses: actions-rust-lang/setup-rust-toolchain@v2
     - uses: taiki-e/install-action@cross
+    - uses: ./.github/actions/build-web
     - run: cross build --release --features server --target ${{matrix.target}}
     - run: mv target/${{matrix.target}}/release/weather target/${{matrix.target}}/release/weather-server-${{matrix.target}}
     - name: Release

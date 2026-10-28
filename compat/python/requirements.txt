@@ -1,0 +1,4 @@
+open-meteo==1.0.1
+PyMetno==0.13.0
+metno-locationforecast==2.1.0
+pytest==8.4.2

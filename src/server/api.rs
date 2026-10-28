@@ -1,272 +1,351 @@
-//! Native JSON API used by the embedded web UI.
+//! Endpoints the forecast APIs don't cover: Open-Meteo style geocoding over the IMS locations,
+//! IMS-only extras (warnings, country forecast) and server status.
+
+use std::path::Path;
+use std::time::Instant;
 
 use axum::Json;
 use axum::extract::{Query, State};
-use chrono::{DateTime, Duration};
-use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use chrono::{DateTime, Utc};
+use serde::Deserialize;
+use weather_api::geocoding::{Place, SearchResponse};
+use weather_api::{ims, status};
 
 use super::{ApiError, AppState, LocationQuery, resolve, round};
-use crate::hourly::HourlyPoint;
-use crate::ims_structs::{Forecast, Location};
+use crate::hourly::Source;
+use crate::ims_json::{CountryForecast, Warning};
+use crate::ims_structs::Location;
 
-#[derive(Serialize)]
-pub struct LocationInfo<'a> {
-    id: i16,
-    name: &'a str,
-    latitude: f32,
-    longitude: f32,
-    elevation: f32,
-}
+const MAX_SEARCH_RESULTS: usize = 100;
 
-impl<'a> From<&'a Location> for LocationInfo<'a> {
-    fn from(l: &'a Location) -> Self {
-        let m = &l.location_meta_data;
-        Self {
-            id: m.location_id,
-            name: m.location_name_eng.trim(),
-            latitude: m.display_lat,
-            longitude: m.display_lon,
-            elevation: m.display_height,
-        }
+fn place(l: &Location) -> Place {
+    let m = &l.location_meta_data;
+    Place {
+        id: m.location_id.into(),
+        name: m.location_name_eng.trim().to_string(),
+        latitude: round(m.display_lat as f64, 4),
+        longitude: round(m.display_lon as f64, 4),
+        elevation: m.display_height as f64,
+        feature_code: "PPL".into(),
+        country_code: "IL".into(),
+        country: "Israel".into(),
+        timezone: "Asia/Jerusalem".into(),
     }
 }
 
-pub async fn status(State(state): State<AppState>) -> Json<Value> {
-    let snap = state.snapshot();
-    let extras = snap.as_ref().map(|s| &s.extras);
-    Json(json!({
-        "loaded": snap.is_some(),
-        "fetched_at": snap.as_ref().map(|s| s.fetched_at.to_rfc3339()),
-        "locations": snap.as_ref().map(|s| s.data.location.len()).unwrap_or(0),
-        "next_refresh": state.next_refresh().map(|t| t.to_rfc3339()),
-        "schedule": &*state.schedule,
-        "sources": {
-            "xml": snap.is_some(),
-            "ims_hourly": extras.is_some_and(|e| e.full.is_some()),
-            "ims_hourly_fetched_at": extras.and_then(|e| e.full_fetched_at).map(|t| t.to_rfc3339()),
-            "warnings": extras.and_then(|e| e.warnings.as_ref()).map(|w| w.len()),
+#[derive(Deserialize)]
+pub struct SearchParams {
+    name: Option<String>,
+    count: Option<usize>,
+}
+
+/// Open-Meteo geocoding `/v1/search?name=…&count=…`: case-insensitive, prefix matches first,
+/// then other substring matches, each alphabetical.
+pub async fn search(
+    State(state): State<AppState>,
+    Query(params): Query<SearchParams>,
+) -> Result<Json<SearchResponse>, ApiError> {
+    let started = Instant::now();
+    let Some(name) = params.name else {
+        return Err(ApiError::bad_request("Parameter 'name' is required"));
+    };
+    let count = params.count.unwrap_or(10);
+    if !(1..=MAX_SEARCH_RESULTS).contains(&count) {
+        return Err(ApiError::bad_request(format!(
+            "count must be 1-{MAX_SEARCH_RESULTS}"
+        )));
+    }
+    let snap = state.require_snapshot()?;
+    let wanted = name.trim().to_lowercase();
+    let mut hits: Vec<(bool, String, &Location)> = snap
+        .data
+        .location
+        .iter()
+        .filter_map(|l| {
+            let n = l.location_meta_data.location_name_eng.trim().to_lowercase();
+            // Like Open-Meteo, a single character only matches name starts.
+            let pos = n.find(&wanted)?;
+            (pos == 0 || wanted.chars().count() > 1).then_some((pos != 0, n, l))
+        })
+        .collect();
+    hits.sort_by(|a, b| (a.0, &a.1).cmp(&(b.0, &b.1)));
+    Ok(Json(SearchResponse {
+        results: if wanted.is_empty() {
+            vec![]
+        } else {
+            hits.into_iter()
+                .take(count)
+                .map(|(_, _, l)| place(l))
+                .collect()
         },
+        generationtime_ms: started.elapsed().as_secs_f64() * 1000.0,
     }))
 }
 
-pub async fn locations(State(state): State<AppState>) -> Result<Json<Value>, ApiError> {
-    let snap = state.require_snapshot()?;
-    let list: Vec<LocationInfo> = snap.data.location.iter().map(Into::into).collect();
-    Ok(Json(json!(list)))
-}
-
 #[derive(Deserialize)]
-pub struct ForecastParams {
-    location: Option<String>,
-    lat: Option<f64>,
-    lon: Option<f64>,
-    /// Only return samples within the next `hours` hours.
-    hours: Option<u32>,
+pub struct CoordParams {
+    latitude: Option<f64>,
+    longitude: Option<f64>,
 }
 
-fn hourly_json(p: &HourlyPoint) -> Value {
-    let r1 = |v: f32| round(v as f64, 1);
-    json!({
-        "time": p.time.to_rfc3339(),
-        "temperature": r1(p.temperature),
-        "feels_like": r1(p.feels_like),
-        "relative_humidity": p.relative_humidity.round(),
-        "precipitation": round(p.precipitation as f64, 2),
-        "precipitation_probability": p.precipitation_probability.map(|v| v.round()),
-        "wind_speed": r1(p.wind_speed),
-        "wind_gust": p.wind_gust.map(r1),
-        "wind_direction": p.wind_direction.round(),
-        "uv_index": p.uv_index.map(r1),
-        "weather_code": p.weather_code,
-        "weather": crate::weather_code_to_str(p.weather_code),
-        "source": p.source,
-    })
+fn warning(w: &Warning) -> ims::Warning {
+    ims::Warning {
+        alert_id: w.alert_id.clone(),
+        severity_id: w.severity_id,
+        severity: w.severity.clone(),
+        color: w.color.clone(),
+        warning_type: w.warning_type.clone(),
+        valid_from: w.valid_from,
+        valid_to: w.valid_to,
+        text: w.text.clone(),
+        text_he: w.text_he.clone(),
+    }
 }
 
-/// The 6-hourly XML samples still relevant: the most recent one (within 6 h) and all later ones.
-fn upcoming(
-    forecasts: &[Forecast],
-    now: DateTime<chrono::Utc>,
-    hours: Option<u32>,
-) -> Vec<&Forecast> {
-    let block = Duration::hours(6);
-    let horizon = hours.map(|h| now + Duration::hours(h as i64));
-    forecasts
-        .iter()
-        .filter(|f| {
-            DateTime::parse_from_rfc3339(&f.forecast_time)
-                .is_ok_and(|t| t + block > now && horizon.is_none_or(|h| t < h))
-        })
-        .collect()
-}
-
-pub async fn forecast(
+/// `/api/ims?latitude=…&longitude=…`: the nearest IMS location, its warnings and today's
+/// country forecast.
+pub async fn extras(
     State(state): State<AppState>,
-    Query(params): Query<ForecastParams>,
-) -> Result<Json<Value>, ApiError> {
-    let snap = state.require_snapshot()?;
-    let query = match (&params.location, params.lat, params.lon) {
-        (Some(name), _, _) => LocationQuery::Name(name),
-        (None, Some(lat), Some(lon)) => LocationQuery::Coords(lat, lon),
-        _ => {
-            return Err(ApiError::bad_request(
-                "pass either `location=<name>` or both `lat` and `lon`",
-            ));
-        }
+    Query(params): Query<CoordParams>,
+) -> Result<Json<ims::Extras>, ApiError> {
+    let (Some(lat), Some(lon)) = (params.latitude, params.longitude) else {
+        return Err(ApiError::bad_request(
+            "Parameter 'latitude' and 'longitude' are required",
+        ));
     };
-    let resolved = resolve(&snap, query)?;
+    let snap = state.require_snapshot()?;
+    let resolved = resolve(&snap, LocationQuery::Coords(lat, lon))?;
     let now = state.now();
-    let forecasts = upcoming(&resolved.location.location_data.forecast, now, params.hours);
     let today = now.with_timezone(&chrono_tz::Asia::Jerusalem).date_naive();
-    let daily: Vec<_> = resolved.daily.iter().filter(|d| d.date >= today).collect();
-    let hour_start =
-        DateTime::from_timestamp(now.timestamp() - now.timestamp().rem_euclid(3600), 0)
-            .expect("valid timestamp");
-    let horizon = params.hours.map(|h| now + Duration::hours(h as i64));
-    let hourly: Vec<Value> = resolved
-        .hourly
-        .iter()
-        .filter(|p| p.time_utc() >= hour_start && horizon.is_none_or(|h| p.time_utc() < h))
-        .map(hourly_json)
+    Ok(Json(ims::Extras {
+        location: place(resolved.location),
+        distance_km: round(resolved.distance_km.unwrap_or(0.0), 1),
+        warnings: snap
+            .warnings_for(resolved.location.location_meta_data.location_id, now)
+            .into_iter()
+            .map(warning)
+            .collect(),
+        country_forecast: snap.country_forecast(today).map(|c: &CountryForecast| {
+            ims::CountryForecast {
+                date: c.date,
+                description: c.description.clone(),
+            }
+        }),
+    }))
+}
+
+/// Resident set size from `/proc/self/status` (Linux only).
+fn rss_bytes() -> Option<u64> {
+    let s = std::fs::read_to_string("/proc/self/status").ok()?;
+    let kb = s.lines().find_map(|l| l.strip_prefix("VmRSS:"))?;
+    Some(
+        kb.trim()
+            .trim_end_matches("kB")
+            .trim()
+            .parse::<u64>()
+            .ok()?
+            * 1024,
+    )
+}
+
+fn modified(meta: &std::fs::Metadata) -> Option<DateTime<Utc>> {
+    meta.modified().ok().map(DateTime::<Utc>::from)
+}
+
+/// Files this program keeps in the cache directory: its own `israel-weather-rs-*` JSON
+/// copies, and `cached-path` downloads (found through their `.meta` sidecars) from IMS.
+fn cache_files(dir: &Path) -> Vec<status::CacheFile> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return vec![];
+    };
+    let mut files: Vec<status::CacheFile> = entries
+        .flatten()
+        .filter_map(|e| {
+            let name = e.file_name().to_string_lossy().into_owned();
+            if name.starts_with("israel-weather-rs-") {
+                let meta = e.metadata().ok()?;
+                return Some(status::CacheFile {
+                    name,
+                    source: None,
+                    bytes: meta.len(),
+                    modified: modified(&meta),
+                });
+            }
+            if !name.ends_with(".meta") {
+                return None;
+            }
+            let sidecar: serde_json::Value =
+                serde_json::from_str(&std::fs::read_to_string(e.path()).ok()?).ok()?;
+            let resource = sidecar["resource"].as_str()?;
+            if !resource.contains("ims.gov.il") {
+                return None;
+            }
+            let data = name.trim_end_matches(".meta");
+            let meta = std::fs::metadata(dir.join(data)).ok()?;
+            Some(status::CacheFile {
+                name: data.to_string(),
+                source: Some(resource.to_string()),
+                bytes: meta.len(),
+                modified: modified(&meta),
+            })
+        })
         .collect();
-    Ok(Json(json!({
-        "location": LocationInfo::from(resolved.location),
-        "distance_km": resolved.distance_km.map(|d| round(d, 1)),
-        "fetched_at": snap.fetched_at.to_rfc3339(),
-        "warnings": snap.warnings_for(resolved.location.location_meta_data.location_id, now),
-        "country_forecast": snap.country_forecast(today),
-        "daily": daily,
-        "hourly": hourly,
-        "forecasts": forecasts,
-    })))
+    files.sort_by(|a, b| a.name.cmp(&b.name));
+    files
+}
+
+pub async fn status(State(state): State<AppState>) -> Json<status::Status> {
+    let snap = state.snapshot();
+    let now = state.now();
+    let hourly = snap.iter().flat_map(|s| s.hourly.iter().flatten());
+    let count = |src: Source| hourly.clone().filter(|p| p.source == src).count();
+    let extras = snap.as_ref().map(|s| &s.extras);
+    let dir = crate::cache_dir();
+    let files = tokio::task::spawn_blocking({
+        let dir = dir.clone();
+        move || cache_files(&dir)
+    })
+    .await
+    .unwrap_or_default();
+    Json(status::Status {
+        server: status::Server {
+            version: env!("CARGO_PKG_VERSION").into(),
+            git_commit: option_env!("WEATHER_GIT_COMMIT").map(Into::into),
+            target: env!("WEATHER_TARGET").into(),
+            rustc: env!("WEATHER_RUSTC").into(),
+            started_at: state.stats.started_at,
+            uptime_seconds: (now - state.stats.started_at).num_seconds().max(0) as u64,
+            rss_bytes: rss_bytes(),
+            pid: std::process::id(),
+        },
+        data: status::Data {
+            loaded: snap.is_some(),
+            fetched_at: snap.as_ref().map(|s| s.fetched_at),
+            ims_hourly_fetched_at: extras.and_then(|e| e.full_fetched_at),
+            locations: snap.as_ref().map_or(0, |s| s.data.location.len()),
+            xml_samples: snap.as_ref().map_or(0, |s| {
+                s.data
+                    .location
+                    .iter()
+                    .map(|l| l.location_data.forecast.len())
+                    .sum()
+            }),
+            hourly_ims: count(Source::Ims),
+            hourly_interpolated: count(Source::Interpolated),
+            first_hour: hourly.clone().map(|p| p.time_utc()).min(),
+            last_hour: hourly.clone().map(|p| p.time_utc()).max(),
+            daily_summaries: extras
+                .and_then(|e| e.full.as_ref())
+                .map_or(0, |f| f.locations.values().map(|l| l.daily.len()).sum()),
+            country_forecasts: extras
+                .and_then(|e| e.full.as_ref())
+                .map_or(0, |f| f.country.len()),
+            warnings: extras.and_then(|e| e.warnings.as_ref()).map(|w| w.len()),
+            schedule: state.schedule.to_string(),
+            next_refresh: state.next_refresh(),
+        },
+        cache: status::Cache {
+            dir: dir.display().to_string(),
+            total_bytes: files.iter().map(|f| f.bytes).sum(),
+            files,
+        },
+        refreshes: state.stats.refreshes(),
+        requests: state.stats.routes(),
+    })
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::server::AppState;
     use crate::server::test_support::*;
     use axum::http::StatusCode;
+    use weather_api::geocoding::SearchResponse;
+    use weather_api::ims::Extras;
+    use weather_api::status::Status;
 
-    #[tokio::test]
-    async fn locations_are_trimmed_and_complete() {
-        let (status, json) = get_json(state_at(NOW), "/api/locations").await;
-        assert_eq!(status, StatusCode::OK);
-        let list = json.as_array().unwrap();
-        assert_eq!(list.len(), 175);
-        assert_eq!(list[0]["name"], "Jerusalem");
-        assert!(list.iter().all(|l| {
-            let n = l["name"].as_str().unwrap();
-            n == n.trim()
-        }));
+    async fn typed<T: serde::de::DeserializeOwned>(state: AppState, uri: &str) -> T {
+        let (status, json) = get_json(state, uri).await;
+        assert_eq!(status, StatusCode::OK, "{uri}: {json}");
+        serde_json::from_value(json).unwrap()
     }
 
     #[tokio::test]
-    async fn forecast_by_name_includes_current_sample() {
-        let (status, json) =
-            get_json(state_at(NOW), "/api/forecast?location=tel%20aviv%20coast").await;
-        assert_eq!(status, StatusCode::OK);
-        assert_eq!(json["location"]["name"], "Tel Aviv Coast");
-        assert!(json["distance_km"].is_null());
-        // 21:45 local: the 21:00 sample is the current one.
-        let f = json["forecasts"].as_array().unwrap();
-        assert_eq!(f[0]["ForecastTime"], "2026-09-30T21:00:00+03:00");
-        assert_eq!(f[1]["ForecastTime"], "2026-10-01T03:00:00+03:00");
+    async fn search_prefix_matches_first() {
+        let r: SearchResponse = typed(state_at(NOW), "/v1/search?name=tel%20aviv").await;
+        assert!(r.results.len() >= 2);
+        assert!(
+            r.results
+                .iter()
+                .all(|p| p.name.to_lowercase().contains("tel aviv"))
+        );
+        assert!(r.results[0].name.to_lowercase().starts_with("tel aviv"));
+        assert_eq!(r.results[0].country_code, "IL");
+
+        // Substring hits rank after prefix hits.
+        let r: SearchResponse = typed(state_at(NOW), "/v1/search?name=aviv&count=100").await;
+        assert!(r.results.iter().any(|p| p.name.starts_with("Tel Aviv")));
     }
 
     #[tokio::test]
-    async fn forecast_includes_ims_extras() {
-        let (_, json) = get_json(
-            state_at(NOW),
-            "/api/forecast?location=Tel%20Aviv%20-%20Yafo",
-        )
-        .await;
-        let warnings = json["warnings"].as_array().unwrap();
-        assert!(!warnings.is_empty());
-        let w = &warnings[0];
-        for key in [
-            "severity",
-            "color",
-            "warning_type",
-            "valid_from",
-            "valid_to",
-            "text",
+    async fn search_no_match_omits_results_and_validates() {
+        let (status, json) = get_json(state_at(NOW), "/v1/search?name=Atlantis").await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(json.get("results").is_none(), "{json}");
+        let r: SearchResponse = typed(state_at(NOW), "/v1/search?name=j&count=100").await;
+        assert!(r.results.iter().all(|p| p.name.starts_with('J')));
+        for uri in [
+            "/v1/search",
+            "/v1/search?name=a&count=0",
+            "/v1/search?name=a&count=101",
         ] {
-            assert!(w[key].is_string(), "{key}: {w}");
+            let (status, _) = get_json(state_at(NOW), uri).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{uri}");
         }
-        assert!(json["country_forecast"]["description"].is_string());
-        let daily = json["daily"].as_array().unwrap();
-        assert_eq!(daily[0]["date"], "2026-09-30");
-        assert!(daily[0]["max_temp"].is_number());
     }
 
     #[tokio::test]
-    async fn forecast_hourly_rows() {
-        let (_, json) = get_json(
+    async fn ims_extras_for_searched_location() {
+        let r: SearchResponse = typed(
             state_at(NOW),
-            "/api/forecast?location=Tel%20Aviv%20Coast&hours=48",
+            "/v1/search?name=Tel%20Aviv%20-%20Yafo&count=1",
         )
         .await;
-        let hourly = json["hourly"].as_array().unwrap();
-        // From the current hour (21:00 local) for 48 hours.
-        assert_eq!(hourly[0]["time"], "2026-09-30T21:00:00+03:00");
-        assert_eq!(hourly.len(), 49);
-        assert_eq!(hourly[0]["source"], "ims");
-        assert_eq!(hourly[1]["source"], "interpolated");
-        let rainy = hourly
-            .iter()
-            .find(|h| h["time"] == "2026-10-02T11:00:00+03:00")
-            .unwrap();
-        assert_eq!(rainy["precipitation"], 0.77);
-        assert_eq!(rainy["precipitation_probability"], 10.0);
-        assert!(rainy["weather"].is_string());
-    }
-
-    #[tokio::test]
-    async fn forecast_hourly_includes_current_hour_with_subsecond_clock() {
-        let (_, json) = get_json(
-            state_at("2026-09-30T18:45:02.071Z"),
-            "/api/forecast?location=Tel%20Aviv%20Coast&hours=2",
+        let p = &r.results[0];
+        let e: Extras = typed(
+            state_at(NOW),
+            &format!("/api/ims?latitude={}&longitude={}", p.latitude, p.longitude),
         )
         .await;
-        assert_eq!(json["hourly"][0]["time"], "2026-09-30T21:00:00+03:00");
-    }
+        assert_eq!(e.location.name, "Tel Aviv - Yafo");
+        assert!(e.distance_km < 0.1);
+        assert!(!e.warnings.is_empty());
+        assert!(!e.warnings[0].warning_type.is_empty());
+        assert!(e.country_forecast.is_some());
 
-    #[tokio::test]
-    async fn forecast_without_ims_json_has_empty_extras() {
-        let (_, json) = get_json(xml_state_at(NOW), "/api/forecast?location=Haifa").await;
-        assert_eq!(json["warnings"], serde_json::json!([]));
-        assert!(json["country_forecast"].is_null());
-        assert_eq!(json["daily"], serde_json::json!([]));
-    }
-
-    #[tokio::test]
-    async fn forecast_by_coordinates_with_hours_limit() {
-        let (status, json) =
-            get_json(state_at(NOW), "/api/forecast?lat=31.78&lon=35.2&hours=12").await;
-        assert_eq!(status, StatusCode::OK);
-        assert_eq!(json["location"]["name"], "Jerusalem");
-        assert!(json["distance_km"].as_f64().unwrap() < 1.0);
-        // Current sample (21:00) plus samples before 09:45 local: 03:00, 09:00.
-        assert_eq!(json["forecasts"].as_array().unwrap().len(), 3);
-    }
-
-    #[tokio::test]
-    async fn forecast_errors() {
-        let (status, json) = get_json(state_at(NOW), "/api/forecast?location=Atlantis").await;
-        assert_eq!(status, StatusCode::NOT_FOUND);
-        assert!(json["reason"].as_str().unwrap().contains("Jerusalem"));
-        let (status, _) = get_json(state_at(NOW), "/api/forecast?lat=32").await;
+        let e: Extras = typed(xml_state_at(NOW), "/api/ims?latitude=32.79&longitude=34.99").await;
+        assert!(e.warnings.is_empty() && e.country_forecast.is_none());
+        let (status, _) = get_json(state_at(NOW), "/api/ims?latitude=32").await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]
-    async fn status_reports_sources() {
-        let (_, json) = get_json(state_at(NOW), "/api/status").await;
-        assert_eq!(json["loaded"], true);
-        assert_eq!(json["locations"], 175);
-        assert_eq!(json["sources"]["ims_hourly"], true);
-        assert!(json["sources"]["warnings"].as_u64().unwrap() > 0);
-        let (_, json) = get_json(xml_state_at(NOW), "/api/status").await;
-        assert_eq!(json["sources"]["ims_hourly"], false);
+    async fn status_counts_data_and_requests() {
+        let state = state_at(NOW);
+        let _ = get_json(state.clone(), "/v1/search?name=haifa").await;
+        let _ = get_json(state.clone(), "/v1/search").await;
+        let s: Status = typed(state, "/api/status").await;
+        assert!(s.data.loaded);
+        assert_eq!(s.data.locations, 175);
+        assert!(s.data.hourly_ims > 0 && s.data.hourly_interpolated > 0);
+        assert!(s.data.first_hour < s.data.last_hour);
+        assert!(s.data.warnings.unwrap() > 0);
+        assert!(!s.server.version.is_empty() && !s.server.target.is_empty());
+        let search = s.requests.iter().find(|r| r.route == "/v1/search").unwrap();
+        assert_eq!((search.count, search.errors), (2, 1));
+
+        let s: Status = typed(xml_state_at(NOW), "/api/status").await;
+        // Only the 6-hourly sample hours are IMS values without the hourly JSON.
+        assert!(s.data.hourly_ims * 4 < s.data.hourly_interpolated);
+        assert_eq!(s.data.warnings, None);
     }
 }

@@ -1,3 +1,5 @@
 /target
 .aider*
 *aider*
+/web/dist
+__pycache__/

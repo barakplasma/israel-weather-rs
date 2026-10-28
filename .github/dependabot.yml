@@ -15,3 +15,12 @@ updates:
     directory: /
     schedule:
       interval: weekly
+  # Third-party clients in the compatibility suite: new releases should keep working.
+  - package-ecosystem: pip
+    directory: /compat/python
+    schedule:
+      interval: weekly
+  - package-ecosystem: gomod
+    directory: /compat/go
+    schedule:
+      interval: weekly
