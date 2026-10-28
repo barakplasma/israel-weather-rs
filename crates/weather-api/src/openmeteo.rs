@@ -28,6 +28,8 @@ pub enum HourlyVar {
     IsDay,
     PrecipitationProbability,
     WindGusts,
+    /// Extension, not in Open-Meteo: the IMS weather code, finer than WMO ("hot", "dust", ...).
+    ImsWeatherCode,
 }
 
 impl HourlyVar {
@@ -49,6 +51,7 @@ impl HourlyVar {
             Self::IsDay => "is_day",
             Self::PrecipitationProbability => "precipitation_probability",
             Self::WindGusts => "wind_gusts_10m",
+            Self::ImsWeatherCode => "ims_weather_code",
         }
     }
 
@@ -70,6 +73,7 @@ impl HourlyVar {
             "is_day" => Self::IsDay,
             "precipitation_probability" => Self::PrecipitationProbability,
             "wind_gusts_10m" | "windgusts_10m" => Self::WindGusts,
+            "ims_weather_code" => Self::ImsWeatherCode,
             _ => return None,
         })
     }
@@ -90,6 +94,8 @@ pub enum DailyVar {
     UvIndexMax,
     PrecipitationProbabilityMax,
     WindGustsMax,
+    /// Extension, not in Open-Meteo: see [`HourlyVar::ImsWeatherCode`].
+    ImsWeatherCode,
 }
 
 impl DailyVar {
@@ -107,6 +113,7 @@ impl DailyVar {
             Self::UvIndexMax => "uv_index_max",
             Self::PrecipitationProbabilityMax => "precipitation_probability_max",
             Self::WindGustsMax => "wind_gusts_10m_max",
+            Self::ImsWeatherCode => "ims_weather_code",
         }
     }
 
@@ -126,6 +133,7 @@ impl DailyVar {
             "uv_index_max" => Self::UvIndexMax,
             "precipitation_probability_max" => Self::PrecipitationProbabilityMax,
             "wind_gusts_10m_max" | "windgusts_10m_max" => Self::WindGustsMax,
+            "ims_weather_code" => Self::ImsWeatherCode,
             _ => return None,
         })
     }
@@ -273,6 +281,7 @@ mod tests {
             IsDay,
             PrecipitationProbability,
             WindGusts,
+            HourlyVar::ImsWeatherCode,
         ] {
             assert_eq!(HourlyVar::parse(v.name()), Some(v));
         }
@@ -290,6 +299,7 @@ mod tests {
             UvIndexMax,
             PrecipitationProbabilityMax,
             WindGustsMax,
+            DailyVar::ImsWeatherCode,
         ] {
             assert_eq!(DailyVar::parse(v.name()), Some(v));
         }

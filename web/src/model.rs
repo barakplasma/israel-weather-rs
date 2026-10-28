@@ -4,7 +4,7 @@
 use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, Timelike, Weekday};
 use weather_api::openmeteo::{DailyVar, Forecast, ForecastQuery, HourlyVar, Time};
 
-const HOURLY: [HourlyVar; 10] = [
+const HOURLY: [HourlyVar; 11] = [
     HourlyVar::Temperature,
     HourlyVar::ApparentTemperature,
     HourlyVar::Precipitation,
@@ -15,13 +15,15 @@ const HOURLY: [HourlyVar; 10] = [
     HourlyVar::RelativeHumidity,
     HourlyVar::UvIndex,
     HourlyVar::IsDay,
+    HourlyVar::ImsWeatherCode,
 ];
-const DAILY: [DailyVar; 5] = [
+const DAILY: [DailyVar; 6] = [
     DailyVar::TemperatureMax,
     DailyVar::TemperatureMin,
     DailyVar::WeatherCode,
     DailyVar::PrecipitationSum,
     DailyVar::PrecipitationProbabilityMax,
+    DailyVar::ImsWeatherCode,
 ];
 
 pub fn query(latitude: f64, longitude: f64) -> ForecastQuery {
@@ -48,6 +50,8 @@ pub struct Hour {
     pub chance: Option<f64>,
     /// WMO code.
     pub code: u8,
+    /// IMS code: finer than WMO ("hot", "dust", "windy").
+    pub ims: Option<i32>,
     pub wind: f64,
     pub gust: Option<f64>,
     pub humidity: f64,
@@ -68,6 +72,7 @@ pub struct Day {
     pub min: f64,
     pub max: f64,
     pub code: u8,
+    pub ims: Option<i32>,
     pub rain: f64,
     pub chance: f64,
     pub hours: Vec<Hour>,
@@ -105,7 +110,19 @@ impl Model {
         let mut all = vec![];
         if let Some(h) = &f.hourly {
             let col = |v: HourlyVar| h.f64s(v.name());
-            let [temp, feels, precip, chance, code, wind, gust, hum, uv, day] = HOURLY.map(col);
+            let [
+                temp,
+                feels,
+                precip,
+                chance,
+                code,
+                wind,
+                gust,
+                hum,
+                uv,
+                day,
+                ims,
+            ] = HOURLY.map(col);
             for (i, t) in h.time.iter().enumerate() {
                 let (Some(time), Some(Some(temperature))) =
                     (local(t, f.utc_offset_seconds), temp.get(i))
@@ -120,6 +137,7 @@ impl Model {
                     precipitation: at(&precip).unwrap_or(0.0),
                     chance: at(&chance),
                     code: at(&code).unwrap_or(3.0) as u8,
+                    ims: at(&ims).map(|c| c as i32),
                     wind: at(&wind).unwrap_or(0.0),
                     gust: at(&gust),
                     humidity: at(&hum).unwrap_or(0.0),
@@ -130,7 +148,7 @@ impl Model {
         }
         let mut days = vec![];
         if let Some(d) = &f.daily {
-            let [max, min, code, rain, chance] = DAILY.map(|v| d.f64s(v.name()));
+            let [max, min, code, rain, chance, ims] = DAILY.map(|v| d.f64s(v.name()));
             for (i, t) in d.time.iter().enumerate() {
                 let Some(date) = local(t, f.utc_offset_seconds).map(|t| t.date()) else {
                     continue;
@@ -152,6 +170,7 @@ impl Model {
                     min: *mn,
                     max: *mx,
                     code: at(&code).unwrap_or(3.0) as u8,
+                    ims: at(&ims).map(|c| c as i32),
                     rain: at(&rain).unwrap_or(0.0),
                     chance: at(&chance).unwrap_or(if at(&rain).unwrap_or(0.0) > 0.0 {
                         100.0
@@ -216,10 +235,10 @@ mod tests {
             "hourly":{"time":["2026-10-28T20:00","2026-10-28T21:00","2026-10-28T22:00","2026-10-29T00:00"],
               "temperature_2m":[20,21,null,18],"apparent_temperature":[20,21,null,18],
               "precipitation":[0,0.4,null,0],"precipitation_probability":[5,60,null,null],
-              "weather_code":[0,61,null,3],"wind_speed_10m":[5,6,null,7],"wind_gusts_10m":[null,null,null,null],
+              "weather_code":[0,61,null,3],"ims_weather_code":[1310,1560,null,1230],"wind_speed_10m":[5,6,null,7],"wind_gusts_10m":[null,null,null,null],
               "relative_humidity_2m":[60,70,null,80],"uv_index":[0,0,null,0],"is_day":[0,0,null,0]},
             "daily":{"time":["2026-10-28","2026-10-29"],"temperature_2m_max":[28,26],
-              "temperature_2m_min":[20,18],"weather_code":[61,3],"precipitation_sum":[0.4,0],
+              "temperature_2m_min":[20,18],"weather_code":[61,3],"ims_weather_code":[1560,null],"precipitation_sum":[0.4,0],
               "precipitation_probability_max":[60,null]}}"#,
         )
         .unwrap()
@@ -241,6 +260,10 @@ mod tests {
             "today keeps its past hours for the graph"
         );
         assert_eq!(m.days[1].chance, 0.0);
+        assert_eq!(
+            (m.hours[0].ims, m.days[0].ims, m.days[1].ims),
+            (Some(1560), Some(1560), None)
+        );
     }
 
     #[test]

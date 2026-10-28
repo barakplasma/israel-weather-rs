@@ -61,7 +61,12 @@ impl Sky {
     }
 }
 
-pub fn label(code: u8) -> &'static str {
+/// The IMS name when known (it is finer: "Hot", "Dust", "Windy"), else the WMO one.
+pub fn label(code: u8, ims: Option<i32>) -> &'static str {
+    match ims.map(weather_api::ims::label) {
+        Some(name) if name != "Unknown" => return name,
+        _ => {}
+    }
     match code {
         0 => "Clear",
         1 => "Mostly clear",
@@ -89,12 +94,27 @@ const DROPS: &str = r#"<g stroke="var(--rain)" stroke-width="3" stroke-linecap="
 const DROP: &str = r#"<g stroke="var(--rain)" stroke-width="3" stroke-linecap="round"><path d="M25 41l-2 4"/></g>"#;
 const FLAKES: &str = r#"<g fill="var(--snow)"><circle cx="17" cy="43" r="2"/><circle cx="25" cy="45" r="2"/><circle cx="33" cy="43" r="2"/></g>"#;
 const BOLT: &str = r#"<path d="M26 36l-5 8h5l-3 6 8-9h-5l3-5z" fill="var(--sun)"/>"#;
+const HEAT: &str = r#"<g stroke="var(--warm)" stroke-width="3" stroke-linecap="round" fill="none"><path d="M12 44q4-3 8 0t8 0 8 0"/></g>"#;
+const DUST: &str = r#"<g stroke="var(--dust)" stroke-width="3" stroke-linecap="round"><path d="M8 30h32M12 37h28M8 44h24"/></g>"#;
+const WIND: &str = r#"<g stroke="var(--cloud-edge)" stroke-width="3" stroke-linecap="round" fill="none"><path d="M6 20h24a5 5 0 1 0-5-5M6 28h32a5 5 0 1 1-5 5M6 36h18"/></g>"#;
+const FLAKE: &str = r#"<g stroke="var(--snow)" stroke-width="3" stroke-linecap="round"><path d="M24 10v32M10 18l28 16M10 34l28-16"/></g>"#;
 const FOG: &str = r#"<g stroke="var(--cloud-edge)" stroke-width="3" stroke-linecap="round"><path d="M10 20h28M8 27h32M12 34h24"/></g>"#;
 
-fn svg(code: u8, is_day: bool) -> String {
+fn svg(code: u8, ims: Option<i32>, is_day: bool) -> String {
     let sky = if is_day { SUN } else { MOON };
     let behind = format!("{SMALL_SUN}{sky}</g>");
-    let body = match code {
+    let raised = format!(r#"<g transform="translate(0 -6)">{sky}</g>"#);
+    // IMS conditions that WMO folds into clear or cloudy.
+    let special = match ims {
+        Some(1310 | 1580) => Some(format!("{raised}{HEAT}")),
+        Some(1010 | 1570) => Some(format!("{raised}{DUST}")),
+        Some(1260) => Some(WIND.to_string()),
+        Some(1300 | 1320 | 1590) => Some(FLAKE.to_string()),
+        _ => None,
+    };
+    // The IMS code is per-day for days (WMO's daily code is the worst hour), so it wins.
+    let code = ims.map_or(code, weather_api::ims::wmo_code);
+    let body = special.unwrap_or_else(|| match code {
         0 => sky.to_string(),
         1 | 2 => format!("{behind}{CLOUD}"),
         45 | 48 => FOG.to_string(),
@@ -104,20 +124,38 @@ fn svg(code: u8, is_day: bool) -> String {
         71..=77 => format!("{CLOUD}{FLAKES}"),
         95..=99 => format!("{CLOUD}{BOLT}"),
         _ => CLOUD.to_string(),
-    };
+    });
     format!(r#"<svg viewBox="0 0 48 52" aria-hidden="true">{body}</svg>"#)
 }
 
 /// A weather icon; `size` in CSS pixels.
 #[component]
-pub fn Icon(code: u8, #[prop(default = true)] is_day: bool, size: u32) -> impl IntoView {
+pub fn Icon(
+    code: u8,
+    #[prop(default = None)] ims: Option<i32>,
+    #[prop(default = true)] is_day: bool,
+    size: u32,
+) -> impl IntoView {
     view! {
         <span
             class="icon"
             role="img"
-            aria-label=label(code)
+            aria-label=label(code, ims)
             style=format!("width:{size}px;height:{size}px")
-            inner_html=svg(code, is_day)
+            inner_html=svg(code, ims, is_day)
         ></span>
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ims_label_wins_when_known() {
+        assert_eq!(label(0, Some(1310)), "Hot");
+        assert_eq!(label(3, Some(1570)), "Dust");
+        assert_eq!(label(0, None), "Clear");
+        assert_eq!(label(0, Some(9999)), "Clear");
     }
 }
