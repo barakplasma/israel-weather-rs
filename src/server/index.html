@@ -51,9 +51,11 @@
                 padding: 0 6px; font-size: .78rem; color: var(--fg); white-space: nowrap; overflow: hidden;
                 border-right: 1px solid var(--card); }
   .strip .seg.dark { color: #fff; }
+  .strip .seg i { position: absolute; bottom: 0; background: var(--rain); }
   .ticks { position: relative; height: 18px; font-size: .75rem; color: var(--muted); }
   .ticks span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
   .ticks:not(.centred) span:first-child { transform: none; }
+  .ticks span.wet { color: var(--rain); font-weight: 600; }
   .timeline { margin-top: 14px; }
 
   .warning { border-left: 6px solid var(--wcolor, #FFD700); }
@@ -82,7 +84,6 @@
   .scrub { position: absolute; top: 18px; transform: translateX(-50%); pointer-events: none; z-index: 1;
            background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 4px 8px;
            font-size: .8rem; white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
-  .rainchart .lvl { font-size: 10px; fill: var(--muted); }
   .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 6px; }
   .legend b { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
   svg { width: 100%; height: auto; display: block; }
@@ -241,23 +242,30 @@ const hourTitle = (r) => {
 /**
  * Coloured condition strip. `pos(r)` places a row on a 0..1 axis, each row spans `step` of it.
  * Consecutive hours with the same sky state merge into one labelled run.
+ * On the full-size strip, wet runs show per-hour rain bars instead of a label; timeline() ticks their start and end.
  */
 function strip(rows, pos, step, thin, px = 800) {
   const runs = [];
   for (const r of rows) {
     const s = sky(r), last = runs[runs.length - 1];
-    if (last && last.s === s) last.end = pos(r) + step;
-    else runs.push({ s, start: pos(r), end: pos(r) + step, r });
+    if (last && last.s === s) { last.end = pos(r) + step; last.rows.push(r); }
+    else runs.push({ s, start: pos(r), end: pos(r) + step, r, rows: [r] });
   }
-  const segs = runs.map(({ s, start, end, r }) => {
+  const segs = runs.map(({ s, start, end, r, rows: rr }) => {
     const w = Math.min(1, end) - start;
-    const label = !thin && w * px > s.label.length * 7 + 12 ? esc(s.label) : "";
-    return `<div class="seg${s.dark ? " dark" : ""}" style="left:${start * 100}%;width:${w * 100}%;background:var(--s-${s.key})" title="${esc(hourTitle(r))}">${label}</div>`;
+    const wet = !thin && SKY.indexOf(s) >= 3;
+    const label = !thin && !wet && w * px > s.label.length * 7 + 12 ? esc(s.label) : "";
+    const bars = wet ? rr.map((h, k) => {
+      const left = (k / rr.length) * 100, bw = 100 / rr.length, c = h.precipitation_probability || 0, l = level(h.precipitation || 0);
+      return (c ? `<i style="left:${left}%;width:${bw}%;height:${c}%;opacity:.25"></i>` : "") +
+        (l ? `<i style="left:${left + bw * 0.2}%;width:${bw * 0.6}%;height:${l * 100}%;border-radius:2px 2px 0 0" title="${esc(hourTitle(h))}"></i>` : "");
+    }).join("") : "";
+    return `<div class="seg${s.dark && !wet ? " dark" : ""}" style="left:${start * 100}%;width:${w * 100}%;background:var(${wet ? "--rain-bg" : `--s-${s.key}`})" title="${esc(hourTitle(r))}">${bars}${label}</div>`;
   }).join("");
   return `<div class="strip${thin ? " thin" : ""}">${segs}</div>`;
 }
 
-const ticks = (items, centred) => `<div class="ticks${centred ? " centred" : ""}">${items.map(([p, t]) => `<span style="left:${p * 100}%">${esc(t)}</span>`).join("")}</div>`;
+const ticks = (items, centred) => `<div class="ticks${centred ? " centred" : ""}">${items.map(([p, t, cls]) => `<span${cls ? ` class="${cls}"` : ""} style="left:${p * 100}%">${esc(t)}</span>`).join("")}</div>`;
 
 /** "this evening", "tomorrow morning", "Tuesday afternoon". */
 function when(d) {
@@ -275,32 +283,25 @@ const isWet = (r) => r.precipitation > 0 || (r.precipitation_probability || 0) >
 function timeline(rows, px) {
   const n = rows.length;
   const every = px < 500 ? 6 : 3;
-  const tickItems = rows.flatMap((r, k) => (k === 0 ? [[0, "Now"]] : k % every === 0 ? [[k / n, fmtTick.format(new Date(r.time))]] : []));
+  const wet = (k) => k < n && SKY.indexOf(sky(rows[k])) >= 3;
+  const at = (k) => fmtTick.format(new Date(Date.parse(rows[0].time) + k * 3600000));
+  // Rain starts and ends get their own ticks; regular ticks too close to one are dropped.
+  const edges = rows.flatMap((r, k) => (k > 0 && wet(k) !== wet(k - 1) ? [k] : []));
+  const close = (a, b) => Math.abs(a - b) * (px / n) < 36;
+  const near = (k) => edges.some((e) => close(e, k));
+  const edgeTicks = [];
+  for (let i = 0; i < edges.length; i++) {
+    const [a, b] = [edges[i], edges[i + 1]];
+    if (wet(a) && b != null && close(a, b)) { edgeTicks.push([(a + b) / 2 / n, `${at(a)}–${at(b)}`, "wet"]); i++; }
+    else edgeTicks.push([a / n, at(a), "wet"]);
+  }
+  const tickItems = [[0, "Now"], ...edgeTicks,
+    ...rows.flatMap((r, k) => (k > 0 && k % every === 0 && !near(k) ? [[k / n, at(k)]] : []))];
   $("#timeline").innerHTML = n ? strip(rows, (r) => rows.indexOf(r) / n, 1 / n, false, px) + ticks(tickItems) : "";
 }
 
-/** Rain intensity levels (mm/h), as used by Merry Sky / Dark Sky. */
-const LEVELS = [["light", 0.5], ["moderate", 2.5], ["heavy", 7.6]];
+/** Rain bar height (0..1) on a log scale that tops out at 10 mm/h. */
 const level = (mm) => Math.min(1, Math.log1p(mm) / Math.log1p(10));
-
-/** Next few hours of rain: bars by intensity, chance as a faint band behind them. */
-function rainChart(rows, px) {
-  const W = Math.max(300, px), H = 90, T = 14, n = rows.length, bw = W / n;
-  const y = (f) => H - f * (H - T);
-  let svg = `<svg class="rainchart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Rain over the next ${n} hours">`;
-  for (const [name, mm] of LEVELS) {
-    const ly = y(level(mm));
-    svg += `<line x1="0" x2="${W}" y1="${ly}" y2="${ly}" stroke="var(--border)" stroke-dasharray="2 3"/><text class="lvl" x="2" y="${ly - 3}">${name}</text>`;
-  }
-  rows.forEach((r, k) => {
-    const c = (r.precipitation_probability || 0) / 100;
-    if (c) svg += `<rect x="${k * bw + 2}" y="${y(c)}" width="${bw - 4}" height="${H - y(c)}" fill="var(--rain)" opacity=".12"/>`;
-    const h = level(r.precipitation || 0);
-    if (h) svg += `<rect x="${k * bw + bw * 0.15}" y="${y(h)}" width="${bw * 0.7}" height="${H - y(h)}" rx="3" fill="var(--rain)"/>`;
-  });
-  svg += "</svg>";
-  return svg + ticks(rows.map((r, k) => [(k + 0.5) / n, k === 0 ? "Now" : fmtTick.format(new Date(r.time))]), true);
-}
 
 function renderNow(loc, data) {
   const cur = data.hourly[0];
@@ -320,14 +321,8 @@ function renderNow(loc, data) {
   $("#now-summary").textContent = line;
 
   $("#now-card").hidden = false;
-  const px = $("#timeline").clientWidth;
-  const soon = data.hourly.slice(0, 6);
-  if (soon.some(isWet)) {
-    $("#timeline").innerHTML = rainChart(soon, px);
-  } else {
-    // Next 24 hours as one strip.
-    timeline(data.hourly.slice(0, 24), px);
-  }
+  // Next 24 hours as one strip.
+  timeline(data.hourly.slice(0, 24), $("#timeline").clientWidth);
 
   const country = $("#country");
   country.textContent = data.country_forecast ? `IMS: ${data.country_forecast.description}` : "";
