@@ -219,20 +219,20 @@ fn Now(model: Model, name: String, country: Option<String>, width: Signal<f64>) 
     };
     let next48 = &model.hours[..model.hours.len().min(48)];
     let summary = match next48.iter().find(|h| h.is_wet()) {
-        Some(w) if w.time == cur.time => format!("{}, rain now", label(cur.code)),
+        Some(w) if w.time == cur.time => format!("{}, rain now", label(cur.code, cur.ims)),
         Some(w) => format!(
             "{}. Rain likely {}",
-            label(cur.code),
+            label(cur.code, cur.ims),
             when(w.time, model.now)
         ),
-        None => format!("{}. No rain in the next two days", label(cur.code)),
+        None => format!("{}. No rain in the next two days", label(cur.code, cur.ims)),
     };
     let strip: Vec<_> = model.hours.iter().take(24).cloned().collect();
     view! {
         <section class="card now">
             <div class="muted">{name}</div>
             <div class="now-row">
-                <Icon code=cur.code is_day=cur.is_day size=72/>
+                <Icon code=cur.code ims=cur.ims is_day=cur.is_day size=72/>
                 <div class="temp">{format!("{:.0}°", cur.temperature)}</div>
                 <div>
                     <div class="summary">{summary}</div>
@@ -272,7 +272,7 @@ fn Week(model: Model) -> impl IntoView {
             view! {
                 <details open=i == 0>
                     <summary>
-                        <Icon code=d.code size=32/>
+                        <Icon code=d.code ims=d.ims size=32/>
                         <span class="name">{name}</span>
                         <span class="range">
                             <span class="lo">{format!("{:.0}°", d.min)}</span>

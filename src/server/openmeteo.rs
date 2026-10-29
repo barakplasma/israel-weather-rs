@@ -176,6 +176,7 @@ impl HourlyCalc for HourlyVar {
             }
             Self::Showers => u.precip_unit(),
             Self::WeatherCode => "wmo code",
+            Self::ImsWeatherCode => "ims code",
             Self::WindSpeed | Self::WindGusts => u.wind_unit(),
             Self::WindDirection => "°",
             Self::PrecipitationProbability => "%",
@@ -193,6 +194,7 @@ impl HourlyCalc for HourlyVar {
             // IMS does not split these out.
             Self::Showers | Self::Snowfall => json!(0.0),
             Self::WeatherCode => json!(wmo_code(p.weather_code)),
+            Self::ImsWeatherCode => json!(p.weather_code),
             Self::WindSpeed => json!(u.wind(p.wind_speed)),
             Self::WindDirection => json!(p.wind_direction.round() as i64),
             Self::UvIndex => p
@@ -222,6 +224,7 @@ impl DailyCalc for DailyVar {
             Self::PrecipitationSum => u.precip_unit(),
             Self::PrecipitationHours => "h",
             Self::WeatherCode => "wmo code",
+            Self::ImsWeatherCode => "ims code",
             Self::WindSpeedMax | Self::WindGustsMax => u.wind_unit(),
             Self::WindDirectionDominant => "°",
             Self::PrecipitationProbabilityMax => "%",
@@ -263,6 +266,17 @@ impl DailyCalc for DailyVar {
                 json!(day.iter().filter(|p| p.precipitation > 0.0).count())
             }
             Self::WeatherCode => json!(day.iter().map(|p| wmo_code(p.weather_code)).max()),
+            // IMS's own daily code, else the day's most frequent hourly code.
+            Self::ImsWeatherCode => json!(ims.and_then(|d| d.weather_code).or_else(|| {
+                let mut counts: HashMap<i32, usize> = HashMap::new();
+                for p in day {
+                    *counts.entry(p.weather_code).or_default() += 1;
+                }
+                counts
+                    .into_iter()
+                    .max_by_key(|&(code, n)| (n, code))
+                    .map(|(code, _)| code)
+            })),
             Self::WindSpeedMax => json!(u.wind(max(|p| p.wind_speed))),
             Self::WindDirectionDominant => {
                 // Speed-weighted vector mean of the wind direction.
@@ -655,6 +669,30 @@ mod tests {
         let temps = json["hourly"]["temperature_2m"].as_array().unwrap();
         assert_eq!(temps.len(), 16 * 24);
         assert!(temps.last().unwrap().is_null());
+    }
+
+    #[tokio::test]
+    async fn ims_weather_code_extension() {
+        let (status, json) = get_json(
+            state_at(NOW),
+            &format!(
+                "/v1/forecast?{TLV}&timezone=Asia/Jerusalem&hourly=weather_code,ims_weather_code\
+                 &daily=weather_code,ims_weather_code"
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{json}");
+        assert_eq!(json["hourly_units"]["ims_weather_code"], "ims code");
+        let (wmo, ims) = (
+            &json["hourly"]["weather_code"],
+            &json["hourly"]["ims_weather_code"],
+        );
+        let i = index_of(&json, "2026-09-30T22:00");
+        let code = ims[i].as_i64().unwrap() as i32;
+        assert!(code >= 1000, "{code}");
+        assert_eq!(wmo[i], super::wmo_code(code));
+        // Israel days use IMS's own daily summary code.
+        assert!(json["daily"]["ims_weather_code"][1].as_i64().unwrap() >= 1000);
     }
 
     #[tokio::test]

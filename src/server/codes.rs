@@ -2,28 +2,7 @@
 
 use chrono::{DateTime, Utc};
 
-/// IMS weather code -> WMO 4677 code, restricted to the subset Open-Meteo emits
-/// (0-3, 45, 48, 51-67, 71-77, 80-86, 95-99) so existing clients recognise every value.
-/// Non-sky conditions (hot, windy, frost, ...) map to the closest sky state.
-pub fn wmo_code(ims: i32) -> u8 {
-    match ims {
-        1250 | 1300 | 1310 | 1580 => 0, // clear, frost, hot, extremely hot
-        1260 | 1270 | 1320 | 1590 => 1, // windy, muggy, cold, extremely cold
-        1220 => 2,                      // partly cloudy
-        1230 | 1010 | 1570 => 3,        // cloudy, sandstorm, dust
-        1160 => 45,                     // fog
-        1560 => 61,                     // cloudy, light rain
-        1140 => 63,                     // rain
-        1510 => 65,                     // stormy
-        1080 => 66,                     // sleet
-        1070 => 71,                     // light snow
-        1060 => 73,                     // snow
-        1520 => 75,                     // heavy snow
-        1530 | 1540 => 80,              // possible rain -> slight showers
-        1020 => 95,                     // thunderstorms
-        _ => 3,
-    }
-}
+pub use weather_api::ims::wmo_code;
 
 /// IMS weather code -> MET Norway `symbol_code` (see api.met.no weathericons legend).
 pub fn metno_symbol(ims: i32, is_day: bool) -> String {

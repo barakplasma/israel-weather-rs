@@ -35,7 +35,7 @@ fn details(h: &Hour) -> String {
     format!(
         "{} · {} · {:.0}°{rain}{chance}",
         hh(h.time),
-        Sky::of(h.code, h.precipitation).label(),
+        crate::icons::label(h.code, h.ims),
         h.temperature
     )
 }
@@ -329,6 +329,7 @@ mod tests {
             precipitation,
             chance: None,
             code: 0,
+            ims: None,
             wind: 0.0,
             gust: None,
             humidity: 50.0,

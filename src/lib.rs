@@ -209,32 +209,7 @@ pub(crate) fn parse_time(time: &str) -> Result<DateTime<FixedOffset>, Error> {
 }
 
 pub fn weather_code_to_str(code: i32) -> &'static str {
-    match code {
-        1010 => "Sandstorms",
-        1020 => "Thunderstorms",
-        1060 => "Snow",
-        1070 => "Light snow",
-        1080 => "Sleet",
-        1140 => "Rainy",
-        1160 => "Fog",
-        1220 => "Partly cloudy",
-        1230 => "Cloudy",
-        1250 => "Clear",
-        1260 => "Windy",
-        1270 => "Muggy",
-        1300 => "Frost",
-        1310 => "Hot",
-        1320 => "Cold",
-        1510 => "Stormy",
-        1520 => "Heavy snow",
-        1530 => "Partly cloudy possible rain",
-        1540 => "Cloudy, possible rain",
-        1560 => "Cloudy, light rain",
-        1570 => "Dust",
-        1580 => "Extremely hot",
-        1590 => "Extremely cold",
-        _ => "Unknown",
-    }
+    weather_api::ims::label(code)
 }
 
 fn transform_forecasts(forecasts: &mut ims_structs::LocationForecasts) -> Result<(), Error> {
