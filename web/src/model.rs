@@ -61,8 +61,32 @@ pub struct Hour {
 
 impl Hour {
     /// Rain is measurable or likely.
-    pub fn is_wet(&self) -> bool {
+    pub fn rain_likely(&self) -> bool {
         self.precipitation > 0.0 || self.chance.unwrap_or(0.0) >= 40.0
+    }
+
+    /// IMS forecasts rain for this hour (e.g. "possible rain"): what the strips colour as wet.
+    pub fn rain_possible(&self) -> bool {
+        crate::icons::Sky::of(self.code, self.precipitation).is_wet()
+    }
+}
+
+/// "Rain likely tomorrow morning", "Chance of light rain this afternoon", ... for the next 48 h,
+/// using the same notion of rain as the strips so the two never disagree.
+pub fn rain_summary(hours: &[Hour], now: NaiveDateTime) -> String {
+    let next48 = &hours[..hours.len().min(48)];
+    let first = hours.first().map(|h| h.time);
+    if let Some(h) = next48.iter().find(|h| h.rain_likely()) {
+        return if Some(h.time) == first {
+            "Rain now".into()
+        } else {
+            format!("Rain likely {}", when(h.time, now))
+        };
+    }
+    match next48.iter().find(|h| h.rain_possible()) {
+        Some(h) if Some(h.time) == first => "Light rain possible now".into(),
+        Some(h) => format!("Chance of light rain {}", when(h.time, now)),
+        None => "No rain in the next two days".into(),
     }
 }
 
@@ -252,7 +276,8 @@ mod tests {
         assert_eq!(hh(m.now), "21:10");
         assert_eq!(m.hours.len(), 2);
         assert_eq!(hh(m.hours[0].time), "21:00");
-        assert!(m.hours[0].is_wet());
+        assert!(m.hours[0].rain_likely());
+        assert_eq!(rain_summary(&m.hours, m.now), "Rain now");
         assert_eq!(m.days.len(), 2);
         assert_eq!(
             m.days[0].hours.len(),
@@ -264,6 +289,39 @@ mod tests {
             (m.hours[0].ims, m.days[0].ims, m.days[1].ims),
             (Some(1560), Some(1560), None)
         );
+    }
+
+    #[test]
+    fn summary_matches_strip_for_possible_rain() {
+        let t = |s| NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M").unwrap();
+        let hour = |time, code, mm, chance| Hour {
+            time: t(time),
+            temperature: 20.0,
+            feels_like: 20.0,
+            precipitation: mm,
+            chance,
+            code,
+            ims: None,
+            wind: 0.0,
+            gust: None,
+            humidity: 50.0,
+            uv: None,
+            is_day: true,
+        };
+        let now = t("2026-10-30T11:40");
+        // The 2026-10-30 Givatayim case: IMS "light rain" at 13:00 with 0 mm and 0% chance.
+        let hours = vec![
+            hour("2026-10-30T11:00", 3, 0.0, Some(0.0)),
+            hour("2026-10-30T13:00", 61, 0.0, Some(0.0)),
+        ];
+        assert_eq!(
+            rain_summary(&hours, now),
+            "Chance of light rain this afternoon"
+        );
+        let dry = vec![hour("2026-10-30T11:00", 3, 0.0, Some(10.0))];
+        assert_eq!(rain_summary(&dry, now), "No rain in the next two days");
+        let wet = vec![dry[0].clone(), hour("2026-10-31T07:00", 3, 0.2, None)];
+        assert_eq!(rain_summary(&wet, now), "Rain likely tomorrow morning");
     }
 
     #[test]

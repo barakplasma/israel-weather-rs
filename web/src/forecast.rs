@@ -12,10 +12,10 @@ use weather_api::openmeteo::Forecast;
 use crate::charts::{DayGraph, Strip};
 use crate::get_json;
 use crate::icons::{Icon, label};
-use crate::model::{Model, query, weekday, when};
+use crate::model::{Model, query, rain_summary, weekday};
 
 const PLACE_KEY: &str = "place";
-const DEFAULT_PLACE: &str = "Tel Aviv - Yafo";
+const DEFAULT_PLACE: &str = "Tel Aviv Coast";
 
 fn storage() -> Option<web_sys::Storage> {
     window().local_storage().ok().flatten()
@@ -30,6 +30,24 @@ fn save_place(p: &Place) {
     if let (Some(s), Ok(json)) = (storage(), serde_json::to_string(p)) {
         let _ = s.set_item(PLACE_KEY, &json);
     }
+}
+
+/// Whether the user already allowed location access, so we can use it without a prompt.
+async fn geolocation_granted() -> bool {
+    let Ok(permissions) = window().navigator().permissions() else {
+        return false;
+    };
+    let desc = js_sys::Object::new();
+    let _ = js_sys::Reflect::set(&desc, &"name".into(), &"geolocation".into());
+    let Ok(query) = permissions.query(&desc) else {
+        return false;
+    };
+    wasm_bindgen_futures::JsFuture::from(query)
+        .await
+        .is_ok_and(|s| {
+            s.unchecked_into::<web_sys::PermissionStatus>().state()
+                == web_sys::PermissionState::Granted
+        })
 }
 
 fn enc(s: &str) -> String {
@@ -117,7 +135,7 @@ pub fn ForecastPage() -> impl IntoView {
             }
         });
     };
-    let near_me = move |_| {
+    let near_me = move || {
         let Ok(geo) = window().navigator().geolocation() else {
             error.set(Some("Location is not available in this browser".into()));
             return;
@@ -147,6 +165,12 @@ pub fn ForecastPage() -> impl IntoView {
             Some(err.unchecked_ref()),
         );
     };
+    // With location already allowed, always start from where the user is.
+    spawn_local(async move {
+        if geolocation_granted().await {
+            near_me();
+        }
+    });
 
     view! {
         <header>
@@ -164,7 +188,7 @@ pub fn ForecastPage() -> impl IntoView {
                 <datalist id="places">
                     {move || suggestions.get().into_iter().map(|p| view! { <option value=p.name></option> }).collect_view()}
                 </datalist>
-                <button on:click=near_me title="Use my location">"Near me"</button>
+                <button on:click=move |_| near_me() title="Use my location">"Near me"</button>
             </div>
         </header>
         {move || error.get().map(|e| view! { <p class="error">{e}</p> })}
@@ -217,16 +241,11 @@ fn Now(model: Model, name: String, country: Option<String>, width: Signal<f64>) 
     let Some(cur) = model.hours.first().cloned() else {
         return view! { <div class="card">"No forecast for the coming hours."</div> }.into_any();
     };
-    let next48 = &model.hours[..model.hours.len().min(48)];
-    let summary = match next48.iter().find(|h| h.is_wet()) {
-        Some(w) if w.time == cur.time => format!("{}, rain now", label(cur.code, cur.ims)),
-        Some(w) => format!(
-            "{}. Rain likely {}",
-            label(cur.code, cur.ims),
-            when(w.time, model.now)
-        ),
-        None => format!("{}. No rain in the next two days", label(cur.code, cur.ims)),
-    };
+    let summary = format!(
+        "{}. {}",
+        label(cur.code, cur.ims),
+        rain_summary(&model.hours, model.now)
+    );
     let strip: Vec<_> = model.hours.iter().take(24).cloned().collect();
     view! {
         <section class="card now">
@@ -254,7 +273,6 @@ fn Week(model: Model) -> impl IntoView {
     let all = model.days.iter().flat_map(|d| d.hours.iter());
     let t_min = all.clone().map(|h| h.temperature).fold(f64::MAX, f64::min);
     let t_max = all.clone().map(|h| h.temperature).fold(f64::MIN, f64::max);
-    let r_max = all.map(|h| h.precipitation).fold(2.0, f64::max);
     let (lo, hi) = model.days.iter().fold((f64::MAX, f64::MIN), |(lo, hi), d| {
         (lo.min(d.min), hi.max(d.max))
     });
@@ -268,7 +286,13 @@ fn Week(model: Model) -> impl IntoView {
             let is_today = d.date == today;
             let name = if is_today { "Today".to_string() } else { weekday(d.date)[..3].to_string() };
             let (left, right) = ((d.min - lo) / span * 100.0, (d.max - lo) / span * 100.0);
-            let title = format!("Rain: {:.0}% chance, {:.1} mm", d.chance, d.rain);
+            let title = format!("Rain: {:.0}% chance, {:.2} mm", d.chance, d.rain);
+            let mm = match d.rain {
+                r if r <= 0.0 => None,
+                r if r < 0.1 => Some("<0.1 mm".to_string()),
+                r => Some(format!("{r:.1} mm")),
+            };
+            let wet = d.chance > 0.0 || mm.is_some() || d.hours.iter().any(|h| h.rain_possible());
             view! {
                 <details open=i == 0>
                     <summary>
@@ -279,17 +303,28 @@ fn Week(model: Model) -> impl IntoView {
                             <span class="track"><i style=format!("left:{left}%;width:{}%", right - left)></i></span>
                             <span>{format!("{:.0}°", d.max)}</span>
                         </span>
-                        <span class="drop" title=title.clone() aria-label=title><i style=format!("width:{}%", d.chance)></i></span>
+                        <span class="rain" class:wet=wet title=title.clone() aria-label=title>
+                            {if wet { format!("{:.0}%", d.chance) } else { "–".into() }}
+                            {mm.map(|m| view! { <small>{m}</small> })}
+                        </span>
                     </summary>
                     <div class="daybox">
-                        <DayGraph hours=d.hours t_min=t_min t_max=t_max r_max=r_max today=is_today/>
+                        <DayGraph hours=d.hours t_min=t_min t_max=t_max today=is_today/>
                     </div>
                 </details>
             }
         })
         .collect_view();
     view! {
-        <section class="card week">{rows}</section>
+        <section class="card week">
+            <div class="week-head muted" aria-hidden="true">
+                <span></span>
+                <span></span>
+                <span>"Low · High"</span>
+                <span>"Rain"</span>
+            </div>
+            {rows}
+        </section>
         <div class="legend muted">
             <span><b style="background:var(--warm)"></b>"Temperature"</span>
             <span><b style="background:var(--rain)"></b>"Rain"</span>

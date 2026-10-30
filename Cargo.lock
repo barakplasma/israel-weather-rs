@@ -3271,6 +3271,7 @@ dependencies = [
  "serde",
  "serde_json",
  "wasm-bindgen",
+ "wasm-bindgen-futures",
  "weather-api",
  "web-sys",
 ]

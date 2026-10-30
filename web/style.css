@@ -1,7 +1,7 @@
 :root {
   color-scheme: light dark;
   --bg: #f4f6fb; --card: #ffffff; --fg: #0f172a; --muted: #64748b; --border: #e2e8f0;
-  --accent: #2563eb; --rain: #0ea5e9; --rain-bg: #dff1fc; --warm: #f97316; --cool: #38bdf8;
+  --accent: #2563eb; --rain: #0ea5e9; --rain-bg: #b8e1f8; --warm: #f97316; --cool: #38bdf8;
   --night: rgba(15, 23, 42, .05); --bad: #dc2626;
   --s-clear: #fdf3d4; --s-partly: #e4e8ef; --s-cloudy: #c3cad6; --s-snow: #eef4fb;
   --sun: #f59e0b; --moon: #facc15; --dust: #b08955; --cloud: #f1f5f9; --cloud-edge: #94a3b8; --snow: #93c5fd;
@@ -11,7 +11,7 @@
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #0d1320; --card: #151d2e; --fg: #e2e8f0; --muted: #8b9bb4; --border: #26324a;
-    --accent: #60a5fa; --rain: #38bdf8; --rain-bg: #0e2d42; --warm: #fb923c; --cool: #7dd3fc;
+    --accent: #60a5fa; --rain: #38bdf8; --rain-bg: #17506f; --warm: #fb923c; --cool: #7dd3fc;
     --night: rgba(0, 0, 0, .25); --bad: #f87171;
     --s-clear: #3a3420; --s-partly: #2b3445; --s-cloudy: #3b465b; --s-snow: #c9d6e6;
     --cloud: #cbd5e1; --cloud-edge: #64748b; --dust: #c9a06a;
@@ -95,12 +95,18 @@ summary {
   grid-template-columns: 32px 4.5rem 1fr 3rem; padding: 10px 0;
 }
 summary::-webkit-details-marker { display: none; }
+.week-head { display: grid; gap: 12px; grid-template-columns: 32px 4.5rem 1fr 3rem; padding: 8px 0 0; font-size: .75rem; }
+.week-head span:nth-child(3) { text-align: center; }
+.week-head span:last-child, .rain { text-align: right; }
+.rain { font-size: .85rem; color: var(--muted); line-height: 1.15; }
+.rain.wet { color: var(--rain); font-weight: 600; }
+.rain small { display: block; font-size: .7rem; font-weight: 500; }
 summary .name { font-weight: 600; }
 .range { display: grid; grid-template-columns: 2.2em 1fr 2.2em; gap: 8px; align-items: center; font-size: .9rem; }
 .range .lo { text-align: right; color: var(--muted); }
-.track, .drop, .share { position: relative; height: 8px; border-radius: 4px; background: var(--border); overflow: hidden; }
+.track, .share { position: relative; height: 8px; border-radius: 4px; background: var(--border); overflow: hidden; }
 .track i { position: absolute; top: 0; bottom: 0; border-radius: 4px; background: linear-gradient(90deg, var(--cool), var(--warm)); }
-.drop i, .share i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--rain); }
+.share i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--rain); }
 .daybox { padding: 14px 0 12px; }
 .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: -4px 4px 14px; font-size: .8rem; }
 .legend b { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
@@ -129,7 +135,7 @@ section.card { overflow-x: auto; }
 .share { margin-bottom: 6px; }
 
 @media (max-width: 560px) {
-  summary { grid-template-columns: 28px 3.2rem 1fr 2rem; gap: 8px; }
+  summary, .week-head { grid-template-columns: 28px 3.2rem 1fr 3rem; gap: 8px; }
   .strip .seg { font-size: .7rem; padding: 0 4px; }
   .now .temp { font-size: 2.7rem; }
 }

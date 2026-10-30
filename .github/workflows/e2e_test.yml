@@ -38,8 +38,9 @@ jobs:
         run: echo "RAIN=$(jq "max_by(.Rain).Rain > 0" weather.json)" >> $GITHUB_ENV
 
       - name: Send notification
+        # --fail-with-body: a rejected notification (e.g. a template error) must fail the job.
         run: |
-          curl -H Priority:$([ "$RAIN" == "true" ] && echo 4 || echo 1) \
+          curl --fail-with-body -H Priority:$([ "$RAIN" == "true" ] && echo 4 || echo 1) \
           -H Click:"https://ims.gov.il/en/cityPortal?lid=84" \
           --url-query "title=$(if [ "$RAIN" == "true" ]; then echo "Rain Expected"; else echo "No Rain"; fi)" \
           --url-query message@ntfy-template.tmpl \
