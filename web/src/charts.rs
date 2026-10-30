@@ -119,11 +119,40 @@ fn ticks(hours: &[Hour], px: f64) -> Vec<(f64, String, bool)> {
         }
     }
     for k in (every..n).step_by(every) {
-        if !edges.iter().any(|&e| close(e, k)) {
-            out.push((k as f64 / n as f64, at(k), false));
+        out.push((k as f64 / n as f64, at(k), false));
+    }
+    // Drop labels that would overlap: rain ticks win, then "Now", then the hour ticks.
+    let span = |(p, t, _): &(f64, String, bool)| {
+        let w = t.chars().count() as f64 * 6.5 + 4.0; // ~.75rem digits
+        let x = p * px;
+        if *p == 0.0 {
+            (0.0, w)
+        } else {
+            (x - w / 2.0, x + w / 2.0)
+        }
+    };
+    let rank = |(p, _, wet): &(f64, String, bool)| {
+        if *wet {
+            0
+        } else if *p == 0.0 {
+            1
+        } else {
+            2
+        }
+    };
+    out.sort_by_key(rank);
+    let mut kept: Vec<(f64, String, bool)> = vec![];
+    for tick in out {
+        let (a, b) = span(&tick);
+        if kept.iter().all(|k| {
+            let (c, d) = span(k);
+            b <= c || d <= a
+        }) {
+            kept.push(tick);
         }
     }
-    out
+    kept.sort_by(|a, b| a.0.total_cmp(&b.0));
+    kept
 }
 
 #[component]
@@ -132,9 +161,9 @@ fn Ticks(items: Vec<(f64, String, bool)>) -> impl IntoView {
         <div class="ticks">
             {items
                 .into_iter()
-                .enumerate()
-                .map(|(i, (p, t, wet))| {
-                    let first = if i == 0 { "transform:none;" } else { "" };
+                .map(|(p, t, wet)| {
+                    // A tick at 0 is left-aligned so it stays inside the chart.
+                    let first = if p == 0.0 { "transform:none;" } else { "" };
                     view! {
                         <span class:wet=wet style=format!("{first}left:{}%", p * 100.0)>{t}</span>
                     }
@@ -185,7 +214,8 @@ pub fn Strip(hours: Vec<Hour>, width: Signal<f64>) -> impl IntoView {
                         let bw = 100.0 / len as f64;
                         let x = k as f64 * bw;
                         let c = h.chance.unwrap_or(0.0);
-                        let l = level(h.precipitation);
+                        // Floor so trace amounts (0.01 mm) are visible.
+                        let l = if h.precipitation > 0.0 { level(h.precipitation).max(0.15) } else { 0.0 };
                         view! {
                             <i class="chance" style=format!("left:{x}%;width:{bw}%;height:{c}%")></i>
                             <i class="bar" style=format!("left:{}%;width:{}%;height:{}%", x + bw * 0.2, bw * 0.6, l * 100.0)></i>
@@ -221,19 +251,15 @@ pub fn Strip(hours: Vec<Hour>, width: Signal<f64>) -> impl IntoView {
 
 /// One day: thin condition strip, temperature curve on a week-wide scale, rain bars + chance.
 #[component]
-pub fn DayGraph(
-    hours: Vec<Hour>,
-    t_min: f64,
-    t_max: f64,
-    r_max: f64,
-    today: bool,
-) -> impl IntoView {
+pub fn DayGraph(hours: Vec<Hour>, t_min: f64, t_max: f64, today: bool) -> impl IntoView {
     const W: f64 = 720.0;
     const H: f64 = 150.0;
     let slot = |h: &Hour| h.time.hour() as f64 / 24.0;
     let x = |f: f64| f * W;
     let y_t = |v: f64| 8.0 + (1.0 - (v - t_min) / (t_max - t_min).max(1.0)) * (H * 0.62 - 8.0);
     let bh = |v: f64, max: f64| v / max * H * 0.38;
+    // Log scale with a floor, so a 0.01 mm hour still shows as a stub.
+    let rain_h = |mm: f64| (level(mm) * H * 0.38).max(4.0);
     let bw = W / 24.0;
 
     let night = hours
@@ -249,7 +275,7 @@ pub fn DayGraph(
             view! {
                 {(c > 0.0).then(|| view! { <rect x=cx y=H - bh(c, 100.0) width=bw height=bh(c, 100.0) fill="var(--rain)" opacity=".15"/> })}
                 {(h.precipitation > 0.0).then(|| view! {
-                    <rect x=rx y=H - bh(h.precipitation, r_max) width=bw * 0.6 height=bh(h.precipitation, r_max) rx="2" fill="var(--rain)"/>
+                    <rect x=rx y=H - rain_h(h.precipitation) width=bw * 0.6 height=rain_h(h.precipitation) rx="2" fill="var(--rain)"/>
                 })}
             }
         })
@@ -359,6 +385,24 @@ mod tests {
         assert_eq!(t[0].1, "Now");
         // The regular 03 tick is 3 h (45 px) from the 06 edge, so it stays.
         assert!(t.iter().any(|x| x.1 == "03" && !x.2));
+    }
+
+    #[test]
+    fn rain_starting_next_hour_replaces_now() {
+        // The 2026-10-30 case: showers at 13 and 16 with "now" at 12.
+        let hours: Vec<Hour> = (0..24)
+            .map(|k| hour(k, if k == 1 || k == 4 { 0.1 } else { 0.0 }))
+            .collect();
+        let t = ticks(&hours, 360.0);
+        assert!(t.iter().all(|x| x.1 != "Now"), "{t:?}");
+        assert_eq!(t[0].1, "22–23");
+        // Both showers keep their tick at phone width (336 px card).
+        let wet: Vec<_> = ticks(&hours, 336.0)
+            .into_iter()
+            .filter(|x| x.2)
+            .map(|x| x.1)
+            .collect();
+        assert_eq!(wet, ["22–23", "01–02"]);
     }
 
     #[test]
