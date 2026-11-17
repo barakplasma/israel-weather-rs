@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::geocoding::Place;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Warning {
     pub alert_id: String,
     pub severity_id: u8,
@@ -23,12 +24,14 @@ pub struct Warning {
 
 /// The written forecast for the whole country.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CountryForecast {
     pub date: NaiveDate,
     pub description: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Extras {
     /// The IMS location the coordinates resolved to.
     pub location: Place,

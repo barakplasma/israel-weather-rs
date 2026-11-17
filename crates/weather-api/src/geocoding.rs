@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 /// One place. Field names and meanings follow Open-Meteo's geocoding API.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Place {
     /// The IMS location id.
     pub id: i64,
@@ -20,6 +21,7 @@ pub struct Place {
 
 /// Like Open-Meteo, `results` is left out entirely when nothing matches.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SearchResponse {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub results: Vec<Place>,

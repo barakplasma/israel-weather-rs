@@ -180,6 +180,7 @@ impl ForecastQuery {
 
 /// A timestamp as `timeformat` asked for: `2026-09-30T21:00` / `2026-09-30`, or unix seconds.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(untagged)]
 pub enum Time {
     Unix(i64),
@@ -191,9 +192,11 @@ pub type Units = BTreeMap<String, String>;
 
 /// Hourly or daily series: one `time` array plus one value array per requested variable.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Series {
     pub time: Vec<Time>,
     #[serde(flatten)]
+    #[cfg_attr(feature = "openapi", schema(value_type = BTreeMap<String, Vec<Option<f64>>>))]
     pub values: BTreeMap<String, Vec<Option<Number>>>,
 }
 
@@ -212,26 +215,35 @@ impl Series {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Current {
     pub time: Time,
     pub interval: u32,
     #[serde(flatten)]
+    #[cfg_attr(feature = "openapi", schema(value_type = BTreeMap<String, Option<f64>>))]
     pub values: BTreeMap<String, Option<Number>>,
 }
 
 /// The legacy `current_weather=true` block.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CurrentWeather {
     pub time: Time,
     pub interval: u32,
+    #[cfg_attr(feature = "openapi", schema(value_type = Option<f64>))]
     pub temperature: Option<Number>,
+    #[cfg_attr(feature = "openapi", schema(value_type = Option<f64>))]
     pub windspeed: Option<Number>,
+    #[cfg_attr(feature = "openapi", schema(value_type = Option<f64>))]
     pub winddirection: Option<Number>,
+    #[cfg_attr(feature = "openapi", schema(value_type = Option<f64>))]
     pub is_day: Option<Number>,
+    #[cfg_attr(feature = "openapi", schema(value_type = Option<f64>))]
     pub weathercode: Option<Number>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Forecast {
     pub latitude: f64,
     pub longitude: f64,

@@ -33,7 +33,8 @@ fn place(l: &Location) -> Place {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct SearchParams {
     name: Option<String>,
     count: Option<usize>,
@@ -41,6 +42,8 @@ pub struct SearchParams {
 
 /// Open-Meteo geocoding `/v1/search?name=…&count=…`: case-insensitive, prefix matches first,
 /// then other substring matches, each alphabetical.
+#[utoipa::path(get, path = "/v1/search", tag = "geocoding", params(SearchParams),
+    responses((status = 200, body = SearchResponse), (status = 400, description = "Bad parameter", body = weather_api::ApiError), (status = 503, description = "No forecast loaded yet", body = weather_api::ApiError)))]
 pub async fn search(
     State(state): State<AppState>,
     Query(params): Query<SearchParams>,
@@ -82,7 +85,8 @@ pub async fn search(
     }))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct CoordParams {
     latitude: Option<f64>,
     longitude: Option<f64>,
@@ -104,6 +108,8 @@ fn warning(w: &Warning) -> ims::Warning {
 
 /// `/api/ims?latitude=…&longitude=…`: the nearest IMS location, its warnings and today's
 /// country forecast.
+#[utoipa::path(get, path = "/api/ims", tag = "ims", params(CoordParams),
+    responses((status = 200, body = ims::Extras), (status = 400, description = "Bad parameter", body = weather_api::ApiError), (status = 503, description = "No forecast loaded yet", body = weather_api::ApiError)))]
 pub async fn extras(
     State(state): State<AppState>,
     Query(params): Query<CoordParams>,
@@ -194,6 +200,7 @@ fn cache_files(dir: &Path) -> Vec<status::CacheFile> {
     files
 }
 
+#[utoipa::path(get, path = "/api/status", tag = "ops", responses((status = 200, body = status::Status)))]
 pub async fn status(State(state): State<AppState>) -> Json<status::Status> {
     let snap = state.snapshot();
     let now = state.now();

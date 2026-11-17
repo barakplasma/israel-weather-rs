@@ -4,6 +4,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Status {
     pub server: Server,
     pub data: Data,
@@ -15,6 +16,7 @@ pub struct Status {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Server {
     pub version: String,
     pub git_commit: Option<String>,
@@ -29,6 +31,7 @@ pub struct Server {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Data {
     pub loaded: bool,
     /// When the XML forecast was last downloaded.
@@ -53,6 +56,7 @@ pub struct Data {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Cache {
     pub dir: String,
     pub files: Vec<CacheFile>,
@@ -60,6 +64,7 @@ pub struct Cache {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CacheFile {
     pub name: String,
     /// The URL it was downloaded from, when known.
@@ -69,6 +74,7 @@ pub struct CacheFile {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Refresh {
     pub started_at: DateTime<Utc>,
     pub duration_ms: u64,
@@ -76,6 +82,7 @@ pub struct Refresh {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SourceResult {
     /// e.g. "forecast xml", "IMS hourly forecast".
     pub name: String,
@@ -84,6 +91,7 @@ pub struct SourceResult {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct RouteStats {
     pub route: String,
     pub count: u64,

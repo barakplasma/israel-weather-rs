@@ -29,7 +29,8 @@ use crate::ims_json::DailySummary;
 const MAX_FORECAST_DAYS: u32 = 16;
 const MAX_PAST_DAYS: u32 = 92;
 
-#[derive(Deserialize, Default)]
+#[derive(Deserialize, Default, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct Params {
     latitude: Option<f64>,
     longitude: Option<f64>,
@@ -376,6 +377,8 @@ impl TimeFormat {
     }
 }
 
+#[utoipa::path(get, path = "/v1/forecast", tag = "open-meteo", params(Params),
+    responses((status = 200, body = om::Forecast), (status = 400, description = "Bad parameter", body = weather_api::ApiError), (status = 503, description = "No forecast loaded yet", body = weather_api::ApiError)))]
 pub async fn forecast(
     State(state): State<AppState>,
     Query(params): Query<Params>,
