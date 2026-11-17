@@ -53,6 +53,7 @@ tracing-subscriber = { version = "0.3.23", features = [
     "env-filter",
     "local-time",
 ] }
+utoipa = { version = "5", features = ["chrono"], optional = true }
 
 [target.'cfg(target_arch = "aarch64")'.dependencies]
 openssl = { version = "0.10.81", features = ["vendored"] }
@@ -62,7 +63,7 @@ openssl = { version = "0.10.81", features = ["vendored"] }
 
 [features]
 # `weather serve`: HTTP server with Open-Meteo / MET Norway compatible APIs and an embedded web UI.
-server = ["dep:axum", "dep:tokio", "dep:cron", "dep:hyper", "dep:hyper-util"]
+server = ["weather-api/openapi", "dep:utoipa", "dep:axum", "dep:tokio", "dep:cron", "dep:hyper", "dep:hyper-util"]
 
 [build-dependencies]
 # Pre-compresses the embedded web UI.

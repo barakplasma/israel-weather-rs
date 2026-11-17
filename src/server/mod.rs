@@ -9,6 +9,7 @@
 mod api;
 pub mod codes;
 mod metno;
+mod openapi;
 mod openmeteo;
 mod stats;
 
@@ -340,6 +341,7 @@ async fn allow_any_origin(mut response: Response) -> Response {
 pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/healthz", get(healthz))
+        .route("/openapi.json", get(openapi::openapi))
         .route("/api/status", get(api::status))
         .route("/api/ims", get(api::extras))
         .route("/v1/forecast", get(openmeteo::forecast))

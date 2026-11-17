@@ -18,7 +18,8 @@ use super::codes::{is_day, metno_symbol, wmo_code};
 use super::{ApiError, AppState, LocationQuery, resolve, round};
 use crate::hourly::HourlyPoint;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct Params {
     lat: Option<f64>,
     lon: Option<f64>,
@@ -138,6 +139,8 @@ fn step(window: &[HourlyPoint], lat: f64, lon: f64) -> Value {
     json!({"time": iso(p.time_utc()), "data": data})
 }
 
+#[utoipa::path(get, path = "/weatherapi/locationforecast/2.0/compact", tag = "met-norway", params(Params),
+    responses((status = 200, description = "MET Norway locationforecast GeoJSON Feature", body = serde_json::Value), (status = 400, description = "Bad parameter", body = weather_api::ApiError), (status = 503, description = "No forecast loaded yet", body = weather_api::ApiError)))]
 pub async fn compact(
     State(state): State<AppState>,
     Query(params): Query<Params>,

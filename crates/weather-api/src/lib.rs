@@ -11,6 +11,7 @@ pub mod status;
 
 /// Error body in Open-Meteo's style, returned with a non-2xx status by every endpoint.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ApiError {
     pub error: bool,
     pub reason: String,
