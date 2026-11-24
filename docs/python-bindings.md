@@ -18,10 +18,14 @@ The client exposes refresh(), locations(), forecast(location_id), current_analys
 
 ## Distribution and tests
 
-Official PyO3/maturin-action builds cp310-abi3 wheels on Linux x86_64 and ARM64, macOS ARM64 and Windows x64. CI checks wheel metadata, clean installation, pip dependencies, fixture parity, threading, offline fallback, locale isolation and unknown field preservation on Python 3.10 and 3.14. Artifacts are attached to a release only after all platform jobs pass. No automatic PyPI publishing. Separate lockfile should be committed once CI resolves it. See [official PyO3 guide](https://pyo3.rs/) and [Maturin](https://www.maturin.rs/).
+Official PyO3/maturin-action builds cp310-abi3 wheels on Linux x86_64 and ARM64 only. CI checks wheel metadata, clean installation, pip dependencies, fixture parity, threading, offline fallback, locale isolation and unknown field preservation on Python 3.10 and 3.14. Artifacts are attached to a release only after all platform jobs pass. No automatic PyPI publishing. Separate lockfile should be committed once CI resolves it. See [official PyO3 guide](https://pyo3.rs/) and [Maturin](https://www.maturin.rs/).
 
-Future: filtered warnings, richer native Python payload stubs, datetime objects, macOS Intel, and an optional py-weatheril adapter.
+Future: filtered warnings, richer native Python payload stubs, datetime objects, macOS/Windows wheels, and an optional py-weatheril adapter.
 
 ## Compatibility facade
 
 `from israel_weather import WeatherIL` provides the same positional constructor (location, language="he", cache_expiration_in_sec=30), four primary methods and named result dataclasses with timezone-aware dates. It uses the native Client, not requests. Expose the raw and normalized extensions through Client and weather.client. Missing values are None; image lists are supported but animation and private helper modules are not in the prerelease. No conflicting `weatheril` import is installed. Credit: [py-weatheril](https://github.com/t0mer/py-weatheril) (MIT).
+
+## BoxD CI
+
+Linux-only wheel builds prefer isolated ephemeral BoxD VMs for trusted push/release/manual jobs when the repository secret BOXD_API_KEY exists. GitHub Actions orchestrates, copies source into the VM, retrieves tested wheels and removes the VM. Fork/untrusted pull requests or missing credentials use the official Maturin action on native Linux runners instead. The portable `scripts/build-python-linux.sh` uses manylinux 2_28, the Rust toolchain and both CPython test versions; ARM64 may require QEMU on x86_64 BoxD hosts. BoxD capability and authentication must be verified before calling the integration operational. Do not expose BoxD credentials to untrusted PR code.

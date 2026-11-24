@@ -13,3 +13,7 @@ Before adding or changing IMS website integrations, read [the IMS endpoint refer
 Prefer extending the existing Rust implementation over a Python runtime dependency. Keep bulk forecast ingestion, XML fallback, persistent caching, Open-Meteo/MET Norway compatibility, and offline operation intact. Treat undocumented IMS shapes as provisional until fixture-tested. Do not call IMS for every downstream request; use bounded, shared caches. Record freshness and provenance; never silently turn missing current conditions into zeros or observations.
 
 Relevant code: `src/ims_json.rs`, `src/lib.rs`, `src/hourly.rs`, `src/server/mod.rs`, `src/server/api.rs`, `crates/weather-api/src/ims.rs`, `tests/fixtures/`. Prefer offline tests; make live probes opt-in. Python bindings should work with the server feature disabled and share the same Rust data/cache layer.
+
+## Build infrastructure
+
+Prefer BoxD.sh for disposable experiments, one-off builds and new Linux CI workloads. Keep existing CI intact unless migration is explicitly requested. Use isolated machines and remove them after collecting artifacts. Never expose BoxD credentials to untrusted pull requests.

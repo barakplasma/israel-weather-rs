@@ -17,3 +17,5 @@ Build locally using maturin develop in a virtual environment. CI validates and t
 ## WeatherIL-compatible API
 
 Change the import to `from israel_weather import WeatherIL`; constructor and four main methods return Weather, Forecast/Daily/Hourly, Warning and RadarSatellite objects. The underlying client is also available as `weather.client` for normalized XML-fallback forecasts and raw endpoint/freshness access. Missing values are None rather than invented zeros; GIF animation and private internals are not supported in this first prerelease. Metadata is locale-scoped, offline-safe, and the upstream cache expiration parameter is honored for current, forecast and warnings. See docs/python-bindings.md.
+
+Linux x86_64 and ARM64 wheels only for this prerelease. See repository docs for BoxD-powered CI.
