@@ -16,6 +16,16 @@ use utoipa::OpenApi;
         super::api::search,
         super::api::extras,
         super::api::status,
+        super::ims_website::current,
+        super::ims_website::forecast,
+        super::ims_website::locations,
+        super::ims_website::warnings,
+        super::ims_website::warnings_metadata,
+        super::ims_website::weather_codes,
+        super::ims_website::wind_directions,
+        super::ims_website::regions,
+        super::ims_website::sea_regions,
+        super::ims_website::radar_satellite,
     ),
     components(schemas(weather_api::ApiError))
 )]
@@ -38,6 +48,16 @@ mod tests {
             "/v1/search",
             "/api/ims",
             "/api/status",
+            "/{language}/now_analysis/{lid}",
+            "/{language}/full_forecast_data/{lid}",
+            "/{language}/locations_info",
+            "/{language}/warnings",
+            "/{language}/warnings_metadata",
+            "/{language}/weather_codes",
+            "/{language}/wind_directions",
+            "/{language}/regions",
+            "/{language}/sea_regions",
+            "/{language}/radar_satellite",
             "/weatherapi/locationforecast/2.0/compact",
         ] {
             assert!(doc["paths"][path]["get"].is_object(), "{path} missing");
