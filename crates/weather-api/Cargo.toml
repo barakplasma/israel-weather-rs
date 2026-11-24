@@ -11,7 +11,7 @@ publish = false
 chrono = { version = "0.4.45", default-features = false, features = ["serde", "std"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
-utoipa = { version = "5", features = ["chrono"], optional = true }
+utoipa = { version = "6", features = ["chrono"], optional = true }
 
 [features]
 # Derive OpenAPI schemas for the wire types (the server enables it; the wasm UI does not).
