@@ -1,0 +1,165 @@
+name: Publish 0.7.0 from merged IMS release
+on:
+  push:
+    branches: ['release/0.7.0']
+    paths: ['.github/workflows/publish-0.7.0.yml']
+permissions:
+  contents: read
+concurrency:
+  group: release-0.7.0
+  cancel-in-progress: false
+
+jobs:
+  desktop:
+    name: release ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: f18b6a9c64822024c9e3e3e607b46dd167051a9b
+          persist-credentials: false
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
+      - name: Build
+        run: cargo build --release
+      - run: cp ./target/release/weather ./target/release/weather-${{ matrix.target }}
+      - uses: ./.github/actions/build-web
+      - name: Build with web server
+        run: cargo build --release --features server
+      - run: cp ./target/release/weather ./target/release/weather-server-${{ matrix.target }}
+      - name: Upload desktop binaries
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-${{ matrix.target }}
+          path: |
+            ./target/release/weather-${{ matrix.target }}
+            ./target/release/weather-server-${{ matrix.target }}
+
+  windows:
+    name: release x86_64-pc-windows-msvc
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: f18b6a9c64822024c9e3e3e607b46dd167051a9b
+          persist-credentials: false
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
+      - run: npm install -g shx
+      - name: Build
+        run: cargo build --release
+      - run: shx cp target/release/weather.exe target/release/weather-x86_64-pc-windows-msvc.exe
+      - name: Upload Windows binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-x86_64
+          path: target/release/weather-x86_64-pc-windows-msvc.exe
+
+  cross-compile:
+    name: cross compile
+    runs-on: ubuntu-latest
+    strategy:
+      # One broken target must not cancel the others' uploads.
+      fail-fast: false
+      matrix:
+        target: ['aarch64-unknown-linux-musl', 'arm-unknown-linux-musleabi', 'armv7-unknown-linux-gnueabihf']
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: f18b6a9c64822024c9e3e3e607b46dd167051a9b
+        persist-credentials: false
+    - uses: actions-rust-lang/setup-rust-toolchain@v2
+    - uses: taiki-e/install-action@cross
+    - run: cross build --release --target ${{matrix.target}}
+    - run: mv target/${{matrix.target}}/release/weather target/${{matrix.target}}/release/weather-${{matrix.target}}
+    - uses: actions/upload-artifact@v7
+      with:
+        name: weather-${{matrix.target}}
+        path: target/${{matrix.target}}/release/weather-${{matrix.target}}
+
+  android:
+    name: build (aarch64-linux-android)
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: f18b6a9c64822024c9e3e3e607b46dd167051a9b
+        persist-credentials: false
+    - uses: actions-rust-lang/setup-rust-toolchain@v2
+      with:
+        target: aarch64-linux-android
+    - uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-ndk
+    # The runner's preinstalled NDK, not cross's android image: that ships NDK r21,
+    # which lacks the libunwind current Rust links against ("cannot find -lunwind").
+    # API 24 = Android 7.0+.
+    # openssl-src's Android configure reads ANDROID_NDK_ROOT, cargo-ndk ANDROID_NDK_HOME.
+    - run: |
+        export ANDROID_NDK_HOME="$ANDROID_NDK_LATEST_HOME" ANDROID_NDK_ROOT="$ANDROID_NDK_LATEST_HOME"
+        cargo ndk --target aarch64-linux-android --platform 24 build --release
+    - run: mv target/aarch64-linux-android/release/weather target/aarch64-linux-android/release/weather-aarch64-linux-android
+    # Same binary with `weather serve` and the embedded web UI, e.g. for Termux.
+    - uses: ./.github/actions/build-web
+    - run: |
+        export ANDROID_NDK_HOME="$ANDROID_NDK_LATEST_HOME" ANDROID_NDK_ROOT="$ANDROID_NDK_LATEST_HOME"
+        cargo ndk --target aarch64-linux-android --platform 24 build --release --features server
+    - run: mv target/aarch64-linux-android/release/weather target/aarch64-linux-android/release/weather-server-aarch64-linux-android
+    - uses: actions/upload-artifact@v7
+      with:
+        name: weather-aarch64-linux-android
+        path: |
+          target/aarch64-linux-android/release/weather-aarch64-linux-android
+          target/aarch64-linux-android/release/weather-server-aarch64-linux-android
+
+  cross-compile-server:
+    name: cross compile with web server
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: ['aarch64-unknown-linux-musl']
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: f18b6a9c64822024c9e3e3e607b46dd167051a9b
+        persist-credentials: false
+    - uses: actions-rust-lang/setup-rust-toolchain@v2
+    - uses: taiki-e/install-action@cross
+    - uses: ./.github/actions/build-web
+    - run: cross build --release --features server --target ${{matrix.target}}
+    - run: mv target/${{matrix.target}}/release/weather target/${{matrix.target}}/release/weather-server-${{matrix.target}}
+    - uses: actions/upload-artifact@v7
+      with:
+        name: weather-server-${{matrix.target}}
+        path: target/${{matrix.target}}/release/weather-server-${{matrix.target}}
+  publish:
+    needs: [desktop, windows, cross-compile, android, cross-compile-server]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish release from verified master commit
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: '0.7.0'
+          target_commitish: 'f18b6a9c64822024c9e3e3e607b46dd167051a9b'
+          name: '0.7.0'
+          prerelease: false
+          fail_on_unmatched_files: true
+          files: dist/weather-*
+          body: |
+            Adds ten typed IMS website-compatible endpoints in Hebrew and English, persistent offline caches, and optional current-analysis enrichment of existing Open-Meteo and IMS extras APIs with a one-second budget.
+            Includes architecture specification and upstream attribution. Existing forecast APIs remain compatible.
+            Python bindings are not part of this stable release.
