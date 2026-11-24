@@ -6,6 +6,12 @@ on:
   release:
     types: [created]
   workflow_dispatch:
+    inputs:
+      all_platforms:
+        description: 'Also build Windows and macOS wheels'
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -15,11 +21,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - runner: ubuntu-latest
-            target: x86_64
-          - runner: ubuntu-24.04-arm
-            target: aarch64
+        include: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.all_platforms && '[{"runner":"ubuntu-latest","target":"x86_64"},{"runner":"ubuntu-24.04-arm","target":"aarch64"},{"runner":"macos-latest","target":"aarch64"},{"runner":"macos-15-intel","target":"x86_64"},{"runner":"windows-latest","target":"x86_64"}]' || '[{"runner":"ubuntu-latest","target":"x86_64"},{"runner":"ubuntu-24.04-arm","target":"aarch64"}]') }}
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
@@ -29,7 +31,7 @@ jobs:
       - uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.target }}
-          manylinux: 2_28
+          manylinux: ${{ runner.os == 'Linux' && '2_28' || 'auto' }}
           before-script-linux: dnf install -y perl perl-IPC-Cmd
           rust-toolchain: '1.98'
           args: --release --manifest-path crates/weather-python/Cargo.toml --out dist

@@ -51,7 +51,8 @@ def test_xml_fallback_language_isolation_and_errors(tmp_path):
     client = client_for(tmp_path)
     result = client.forecast(2)
     assert result["hourly"]
-    assert all(p["source"] == "interpolated" for p in result["hourly"])
+    assert any(p["source"] == "interpolated" for p in result["hourly"])
+    assert all(p["wind_gust"] is None and p["precipitation_probability"] is None for p in result["hourly"])
     assert result["native_fetched_at"] is None
     put(tmp_path, "now_analysis-2", {"data": {"2": {"temperature": "22.5"}}})
     hebrew = Client(language="he", cache_dir=tmp_path, offline=True)

@@ -18,9 +18,9 @@ The client exposes refresh(), locations(), forecast(location_id), current_analys
 
 ## Distribution and tests
 
-Official PyO3/maturin-action builds cp310-abi3 wheels on Linux x86_64 and ARM64 only. CI checks wheel metadata, clean installation, pip dependencies, fixture parity, threading, offline fallback, locale isolation and unknown field preservation on Python 3.10 and 3.14. Artifacts are attached to a release only after all platform jobs pass. No automatic PyPI publishing. Separate lockfile should be committed once CI resolves it. See [official PyO3 guide](https://pyo3.rs/) and [Maturin](https://www.maturin.rs/).
+Official PyO3/maturin-action builds cp310-abi3 wheels on Linux x86_64 and ARM64 by default. Optional manual builds also cover macOS ARM64/Intel and Windows x86_64. CI checks wheel metadata, clean installation, pip dependencies, fixture parity, threading, offline fallback, locale isolation and unknown field preservation on Python 3.10 and 3.14. Artifacts are attached to a release only after all platform jobs pass. No automatic PyPI publishing. Separate lockfile should be committed once CI resolves it. See [official PyO3 guide](https://pyo3.rs/) and [Maturin](https://www.maturin.rs/).
 
-Future: filtered warnings, richer native Python payload stubs, datetime objects, macOS/Windows wheels, and an optional py-weatheril adapter.
+Future: filtered warnings, richer native Python payload stubs, datetime objects, and deeper py-weatheril compatibility.
 
 ## Compatibility facade
 
@@ -28,4 +28,12 @@ Future: filtered warnings, richer native Python payload stubs, datetime objects,
 
 ## CI infrastructure
 
-Use GitHub Actions only for this project's Linux wheel pipeline. The official Maturin action runs on native x86_64 and ARM64 GitHub-hosted runners; no separate compute provider, credentials, or duplicate feature-branch push runs are required. The manylinux 2_28 build installs the Perl dependencies needed for vendored OpenSSL.
+Use GitHub Actions only for this project's wheel pipeline. The official Maturin action runs on native x86_64 and ARM64 GitHub-hosted runners; no separate compute provider, credentials, or duplicate feature-branch push runs are required. The manylinux 2_28 build installs the Perl dependencies needed for vendored OpenSSL.
+
+### Optional desktop wheels
+
+Run the Python wheels workflow manually and enable `all_platforms` (default false). This adds macOS ARM64, macOS Intel and Windows x86_64 to the two normal Linux jobs. All targets run the same wheel metadata and Python 3.10/3.14 installation and compatibility checks. Manual builds upload artifacts without publishing a release. Ordinary pushes, pull requests and release events remain Linux-only.
+
+```sh
+gh workflow run python-wheels.yml -f all_platforms=true
+```
