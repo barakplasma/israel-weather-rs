@@ -16,4 +16,4 @@ Relevant code: `src/ims_json.rs`, `src/lib.rs`, `src/hourly.rs`, `src/server/mod
 
 ## Build infrastructure
 
-Prefer BoxD.sh for disposable experiments, one-off builds and new Linux CI workloads. Keep existing CI intact unless migration is explicitly requested. Use isolated machines and remove them after collecting artifacts. Never expose BoxD credentials to untrusted pull requests.
+Use GitHub Actions alone for repository CI and releases. Do not run BoxD alongside GitHub-hosted runners: paying for both defeats the cost-saving goal. BoxD may be considered for standalone disposable work or a complete replacement of CI compute, not as a second CI backend.

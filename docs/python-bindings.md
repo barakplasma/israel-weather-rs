@@ -26,6 +26,6 @@ Future: filtered warnings, richer native Python payload stubs, datetime objects,
 
 `from israel_weather import WeatherIL` provides the same positional constructor (location, language="he", cache_expiration_in_sec=30), four primary methods and named result dataclasses with timezone-aware dates. It uses the native Client, not requests. Expose the raw and normalized extensions through Client and weather.client. Missing values are None; image lists are supported but animation and private helper modules are not in the prerelease. No conflicting `weatheril` import is installed. Credit: [py-weatheril](https://github.com/t0mer/py-weatheril) (MIT).
 
-## BoxD CI
+## CI infrastructure
 
-Linux-only wheel builds prefer isolated ephemeral BoxD VMs for trusted push/release/manual jobs when the repository secret BOXD_API_KEY exists. GitHub Actions orchestrates, copies source into the VM, retrieves tested wheels and removes the VM. Fork/untrusted pull requests or missing credentials use the official Maturin action on native Linux runners instead. The portable `scripts/build-python-linux.sh` uses manylinux 2_28, the Rust toolchain and both CPython test versions; ARM64 may require QEMU on x86_64 BoxD hosts. BoxD capability and authentication must be verified before calling the integration operational. Do not expose BoxD credentials to untrusted PR code.
+Use GitHub Actions only for this project's Linux wheel pipeline. The official Maturin action runs on native x86_64 and ARM64 GitHub-hosted runners; no separate compute provider, credentials, or duplicate feature-branch push runs are required. The manylinux 2_28 build installs the Perl dependencies needed for vendored OpenSSL.

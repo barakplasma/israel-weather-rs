@@ -537,14 +537,22 @@ mod tests {
     #[test]
     #[ignore = "requires network"]
     fn make_cache_online() {
-        assert!(make_cache(false, &cache_dir(), &weather_url()).unwrap().is_file());
+        assert!(
+            make_cache(false, &cache_dir(), &weather_url())
+                .unwrap()
+                .is_file()
+        );
     }
 
     #[test]
     #[ignore = "requires network for initial download"]
     fn make_cache_offline() {
         make_cache(false, &cache_dir(), &weather_url()).unwrap();
-        assert!(make_cache(true, &cache_dir(), &weather_url()).unwrap().is_file());
+        assert!(
+            make_cache(true, &cache_dir(), &weather_url())
+                .unwrap()
+                .is_file()
+        );
     }
 
     #[test]

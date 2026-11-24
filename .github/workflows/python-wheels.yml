@@ -1,7 +1,7 @@
 name: Python wheels
 on:
   push:
-    branches: [master, 'feat/pyo3-native-client']
+    branches: [master]
   pull_request:
   release:
     types: [created]
@@ -21,47 +21,25 @@ jobs:
           - runner: ubuntu-24.04-arm
             target: aarch64
     runs-on: ${{ matrix.runner }}
-    env:
-      BOXD_TOKEN: ${{ secrets.BOXD_API_KEY }}
     steps:
       - uses: actions/checkout@v7
-      - name: Build and test on disposable BoxD machine
-        if: env.BOXD_TOKEN != '' && github.event_name != 'pull_request'
-        shell: bash
-        run: |
-          curl -fsSL https://boxd.sh/downloads/install.sh | sh -s -- --yes
-          export PATH="$HOME/.local/bin:$PATH"
-          vm="weather-ci-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-${{ matrix.target }}"
-          trap 'boxd machine remove "$vm" --confirm || true' EXIT
-          boxd machine new "$vm" --isolated --auto-suspend-timeout=0 --auto-hibernate-timeout=0
-          git archive --format=tar HEAD > /tmp/weather-src.tar
-          boxd machine cp /tmp/weather-src.tar "$vm:/tmp/weather-src.tar"
-          boxd machine exec "$vm" --timeout 3600 -- bash -c 'mkdir -p ~/weather-ci && cd ~/weather-ci && tar xf /tmp/weather-src.tar && bash scripts/build-python-linux.sh "$1"' bash '${{ matrix.target }}'
-          mkdir -p dist
-          boxd machine exec "$vm" -- bash -c 'tar -cf /tmp/wheels.tar -C ~/weather-ci/dist .'
-          boxd machine cp "$vm:/tmp/wheels.tar" /tmp/wheels.tar
-          tar xf /tmp/wheels.tar -C dist
       - uses: actions/setup-python@v6
-        if: env.BOXD_TOKEN == '' || github.event_name == 'pull_request'
         with:
           python-version: '3.10'
       - uses: PyO3/maturin-action@v1
-        if: env.BOXD_TOKEN == '' || github.event_name == 'pull_request'
         with:
           target: ${{ matrix.target }}
           manylinux: 2_28
-          before-script-linux: dnf install -y perl-IPC-Cmd perl-FindBin perl-File-Compare perl-File-Copy
+          before-script-linux: dnf install -y perl perl-IPC-Cmd
           rust-toolchain: '1.98'
           args: --release --manifest-path crates/weather-python/Cargo.toml --out dist
       - name: Validate wheel metadata
-        if: env.BOXD_TOKEN == '' || github.event_name == 'pull_request'
         shell: bash
         run: |
           python -m pip install twine
           python -m twine check dist/*.whl
           python -c "from pathlib import Path; wheels=list(Path('dist').glob('*.whl')); assert len(wheels)==1 and '-cp310-abi3-' in wheels[0].name, wheels"
       - name: Install and test wheel on Python 3.10
-        if: env.BOXD_TOKEN == '' || github.event_name == 'pull_request'
         shell: bash
         run: |
           python -m pip install pytest
@@ -69,11 +47,9 @@ jobs:
           python -m pip check
           python -m pytest crates/weather-python/tests
       - uses: actions/setup-python@v6
-        if: env.BOXD_TOKEN == '' || github.event_name == 'pull_request'
         with:
           python-version: '3.14'
       - name: Install and test same ABI3 wheel on Python 3.14
-        if: env.BOXD_TOKEN == '' || github.event_name == 'pull_request'
         shell: bash
         run: |
           python -m pip install pytest
