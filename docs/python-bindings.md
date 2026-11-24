@@ -1,4 +1,4 @@
-# Native Python bindings (PyO3 + maturin)
+# Native Python bindings (PyO3 + standard Python wheel CI)
 
 Status: proposed implementation, not shipped. Goal: use the same Rust IMS client, parsers, persistent cache and offline logic directly from Python without subprocesses, HTTP server or duplicated scraper.
 
@@ -26,23 +26,32 @@ Current Cargo workspace has root library/binary israel-weather-rs, crates/weathe
 
 ## Phase 2: binding crate and Python package
 
-Add `crates/weather-python/` to workspace members (not default-members initially), with Cargo.toml, src/lib.rs, pyproject.toml, python/israel_weather/__init__.py, python/israel_weather/py.typed, type stubs and tests. Proposed distribution name `israel-weather-rs` and import `israel_weather`; verify PyPI name availability before publishing. Use `cdylib` extension module named `_native`, a compatible stable PyO3 version and maturin build backend; initially target stable ABI (abi3-py310) after checking chosen PyO3 support. Keep dependency versions pinned through lock files; validate current PyO3/maturin docs before choosing versions. No unsafe code in handwritten binding logic. Root package forbids unsafe_code; retain that.
+Add `crates/weather-python/` to workspace members (not default-members initially), with Cargo.toml, src/lib.rs, python/israel_weather/__init__.py, python/israel_weather/py.typed, type stubs and tests. Put the Python build metadata at the repository root so workspace path dependencies and the lockfile are in scope. Proposed distribution name `israel-weather-rs` and import `israel_weather`; verify PyPI name availability before publishing. Use `cdylib` extension module named `_native`, a compatible stable PyO3 version and setuptools-rust build backend; initially target stable ABI (abi3-py310) after checking chosen PyO3 support. Maturin is optional, not a dependency or requirement. Keep dependency versions pinned through lock files; validate current PyO3/maturin docs before choosing versions. No unsafe code in handwritten binding logic. Root package forbids unsafe_code; retain that.
 
-Suggested pyproject design (not yet an actual build configuration):
+Preferred no-Maturin packaging design (illustrative; validate once the binding crate exists):
+
 ```toml
+# Root pyproject.toml
 [build-system]
-requires = ["maturin>=1,<2"]
-build-backend = "maturin"
+requires = ["setuptools", "wheel", "setuptools-rust>=1.12"]
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "israel-weather-rs"
 requires-python = ">=3.10"
-# Set version/license metadata from the Cargo package after verifying maturin behavior.
+# Supply version and license metadata from Cargo in the release process.
 
-[tool.maturin]
-python-source = "python"
-module-name = "israel_weather._native"
+[tool.setuptools.packages.find]
+where = ["crates/weather-python/python"]
+
+[[tool.setuptools-rust.ext-modules]]
+target = "israel_weather._native"
+path = "crates/weather-python/Cargo.toml"
+binding = "PyO3"
+features = ["pyo3/abi3-py310"]
 ```
+
+Set stable wheel tags as well as the Rust ABI. For a local build, use `python -m build --wheel --config-setting=--build-option=--py-limited-api=cp310` (setuptools-rust documents this option). For cibuildwheel use the equivalent build config setting; explicitly assert cp310-abi3 tags. Test the result on multiple CPython versions. Do not promise free-threaded compatibility. Keep the extension build configuration separate from ordinary Rust tests; no Maturin required.
 
 PyO3 boundary should be thin: `#[pyclass]` client owning Arc<CoreClient>, `#[pymethods]`, `#[pymodule]`, convert DTOs to typed Python models or dictionaries. Start with typed Python dataclasses or TypedDicts and generated/maintained stubs; avoid JSON text as the primary API. Return timezone-aware datetime, float/int, None, collections; never NaN/missing-as-zero. Map invalid input to ValueError, unavailable data to a dedicated WeatherUnavailableError, parse/transport to documented subclasses. Release GIL around blocking Rust I/O and computation (modern PyO3 Python::detach; check exact version), reacquire for Python object construction; no Python references across detached operations. Use bounded concurrent access to cache and avoid lock inversion. Do not claim free-threaded CPython support before testing.
 
@@ -63,11 +72,28 @@ For Python async apps provide a thin asyncio.to_thread wrapper over the synchron
 
 ## Phase 3: build, test, publish
 
-- Local developer flow: create venv, install maturin and pytest, cd crates/weather-python, maturin develop, pytest tests. cargo test -p israel-weather-rs remains independent.
-- Build wheels for Linux x86_64 and aarch64 (manylinux), macOS arm64/x86_64 and Windows x64 as CI capacity permits; prioritize Linux ARM64 and x86_64. Test supported CPython versions from 3.10 onward, including newest tested stable release. Test wheel installation in clean environments, not only maturin develop. No compiler or Rust required at runtime.
+- Local developer flow: create venv, install build and pytest, build the wheel at repo root with the command above, pip install the produced wheel, and run pytest crates/weather-python/tests. cargo test -p israel-weather-rs remains independent.
+- Build wheels for Linux x86_64 and aarch64 (manylinux), macOS arm64/x86_64 and Windows x64 as CI capacity permits; prioritize Linux ARM64 and x86_64. Test supported CPython versions from 3.10 onward, including newest tested stable release. Test wheel installation in clean environments, not only an editable install. No compiler or Rust required at runtime.
 - Current reqwest default-tls uses native OpenSSL on Linux and vendored OpenSSL for arm/aarch64 in root Cargo.toml. Verify manylinux/auditwheel linkage, CA cert handling, and wheel size; choose portable TLS packaging if necessary without breaking Android CLI. Current Rust MSRV 1.98 requires an appropriate toolchain; verify runner availability rather than lowering silently. Build sdist with workspace path dependencies included or defer sdist until tested.
-- CI: dedicated Python wheel workflow, fixture-based pytest for current/forecast/warnings/radar, language isolation, stale/offline, typed errors, DST, threading/GIL smoke test, parity with core Rust fixtures and existing Rust/API tests. Test optional web/server feature separately. Add package README and examples, licensing/third-party notice and wheel metadata. Publish via PyPI trusted publishing on tagged releases only after successful clean install; test on TestPyPI first if desired. No credentials in repo.
-- References: [PyO3 guide](https://pyo3.rs/), [maturin documentation](https://www.maturin.rs/), [maturin mixed Rust/Python layout](https://www.maturin.rs/project_layout.html). Check exact selected version API and wheel targets at implementation time.
+- CI: dedicated Python wheel workflow (see concrete matrix below), fixture-based pytest for current/forecast/warnings/radar, language isolation, stale/offline, typed errors, DST, threading/GIL smoke test, parity with core Rust fixtures and existing Rust/API tests. Test optional web/server feature separately. Add package README and examples, licensing/third-party notice and wheel metadata. Publish via PyPI trusted publishing on tagged releases only after successful clean install; test on TestPyPI first if desired. No credentials in repo.
+- Canonical references: [PyO3 user guide](https://pyo3.rs/), [building and distribution](https://pyo3.rs/main/building-and-distribution), [setuptools-rust configuration](https://setuptools-rust.readthedocs.io/en/stable/), [stable ABI wheel packaging](https://setuptools-rust.readthedocs.io/en/stable/building_wheels.html), [PyPA cibuildwheel](https://cibuildwheel.pypa.io/en/latest/), [CI configuration](https://cibuildwheel.pypa.io/en/stable/options/), [ABI3 FAQ](https://cibuildwheel.pypa.io/en/latest/faq/). Pin the chosen compatible releases; use versioned PyO3 docs once selected. The third-party agent skill is not required.
+
+### Concrete GitHub Actions plan
+
+Add .github/workflows/python-wheels.yml when the binding crate exists (do not add a failing workflow to this documentation-only PR).
+
+| Job | Runner / target | Output |
+| --- | --- | --- |
+| Rust/Python PR smoke | Linux x86_64 | Rust tests + wheel build/install + offline pytest |
+| Linux wheel | Native x86_64 and ARM64 runners; manylinux containers | One cp310-abi3 wheel per architecture |
+| macOS wheel | Native ARM64 and x86_64 where available | One cp310-abi3 wheel per architecture |
+| Windows wheel | Windows x64 | One cp310-abi3 wheel |
+| Install matrix | Each supported OS/arch, CPython 3.10 and latest supported stable CPython; expand intermediate versions | Install the exact built artifact, offline tests and import from outside source tree |
+| Release | Protected tag/release, after all build/install jobs | Attach verified wheel artifacts to GitHub Release; optional PyPI trusted publishing |
+
+Use pypa/cibuildwheel action pinned to a reviewed release/commit, configure CIBW_BUILD for cp310 on each platform (verify selection against the selected cibuildwheel version), CIBW_CONFIG_SETTINGS for --build-option=--py-limited-api=cp310, and CIBW_TEST_COMMAND for fixture-based pytest. Install Rust 1.98+ inside the Linux build container via a pinned toolchain and CIBW_BEFORE_ALL_LINUX; set PATH for the container, not just the host. Use normal rustup setup on macOS/Windows. Use native ARM64 where possible rather than emulation, and validate the selected manylinux baseline and OpenSSL linkage. Let cibuildwheel repair/audit wheels, including abi3audit where supported. Upload wheels using actions/upload-artifact; separate wheel-build credentials from release/publish jobs. Run PR smoke on PRs affecting Python/core, full matrix on master/release and manual dispatch. Cache Cargo dependencies by target/toolchain/lockfile, not compiled wheels across incompatible platforms.
+
+No Maturin in runtime, build configuration or CI by default. If maintaining setuptools-rust/cibuildwheel becomes more work than needed, [PyO3's own maturin-action](https://github.com/PyO3/maturin-action) is a supported CI-only alternative (not a runtime dependency); switching the packaging backend does not change the PyO3 client. Manual Cargo builds are supported by PyO3 but would require implementing wheel metadata, platform tags and repair ourselves, so avoid them for distribution.
 
 ## Milestones and acceptance
 
