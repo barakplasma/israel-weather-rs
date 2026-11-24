@@ -6,6 +6,7 @@ build-backend = "maturin"
 name = "israel-weather-rs"
 requires-python = ">=3.10"
 dynamic = ["version"]
+dependencies = ["tzdata; platform_system == 'Windows'"]
 description = "Native Rust client for IMS weather forecasts and website data"
 readme = "README.md"
 license = "MIT"

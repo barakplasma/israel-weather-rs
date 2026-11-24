@@ -21,3 +21,7 @@ The client exposes refresh(), locations(), forecast(location_id), current_analys
 Official PyO3/maturin-action builds cp310-abi3 wheels on Linux x86_64 and ARM64, macOS ARM64 and Windows x64. CI checks wheel metadata, clean installation, pip dependencies, fixture parity, threading, offline fallback, locale isolation and unknown field preservation on Python 3.10 and 3.14. Artifacts are attached to a release only after all platform jobs pass. No automatic PyPI publishing. Separate lockfile should be committed once CI resolves it. See [official PyO3 guide](https://pyo3.rs/) and [Maturin](https://www.maturin.rs/).
 
 Future: filtered warnings, richer native Python payload stubs, datetime objects, macOS Intel, and an optional py-weatheril adapter.
+
+## Compatibility facade
+
+`from israel_weather import WeatherIL` provides the same positional constructor (location, language="he", cache_expiration_in_sec=30), four primary methods and named result dataclasses with timezone-aware dates. It uses the native Client, not requests. Expose the raw and normalized extensions through Client and weather.client. Missing values are None; image lists are supported but animation and private helper modules are not in the prerelease. No conflicting `weatheril` import is installed. Credit: [py-weatheril](https://github.com/t0mer/py-weatheril) (MIT).

@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
 use serde_json::{Value, json};
@@ -21,6 +21,7 @@ pub struct ClientConfig {
     pub offline: bool,
     pub ims_base_url: String,
     pub xml_url: String,
+    pub cache_expiration_in_sec: Option<u64>,
 }
 
 impl Default for ClientConfig {
@@ -32,6 +33,7 @@ impl Default for ClientConfig {
             ims_base_url: crate::non_empty_env("WEATHER_IMS_BASE_URL")
                 .unwrap_or_else(|| "https://ims.gov.il/en".into()),
             xml_url: crate::weather_url(),
+            cache_expiration_in_sec: None,
         }
     }
 }
@@ -53,6 +55,7 @@ impl Client {
                 dir: config.cache_dir.clone(),
                 base: config.ims_base_url.clone(),
                 offline: config.offline,
+                ttl_override: config.cache_expiration_in_sec.map(Duration::from_secs),
             },
             config,
             xml: Mutex::default(),
@@ -123,7 +126,7 @@ impl Client {
             return Err(Error::Json("invalid location ID for endpoint".into()));
         }
         let entry = self.website_entry(endpoint, lid)?;
-        let stale = !entry.fresh(endpoint.ttl());
+        let stale = !entry.fresh(self.store.ttl(endpoint));
         Ok(json!({
             "payload": entry.value,
             "fetched_at": DateTime::<Utc>::from(entry.fetched),
@@ -152,7 +155,7 @@ impl Client {
                 Some((
                     parsed.locations.get(&lid)?.clone(),
                     DateTime::<Utc>::from(entry.fetched),
-                    !entry.fresh(Endpoint::Forecast.ttl()),
+                    !entry.fresh(self.store.ttl(Endpoint::Forecast)),
                 ))
             });
         let (hourly, daily, fetched_at, stale) = match native {

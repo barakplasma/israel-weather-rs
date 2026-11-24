@@ -31,13 +31,14 @@ struct Client {
 #[pymethods]
 impl Client {
     #[new]
-    #[pyo3(signature = (language="en", cache_dir=None, offline=false, base_url=None, xml_url=None))]
+    #[pyo3(signature = (language="en", cache_dir=None, offline=false, base_url=None, xml_url=None, cache_expiration_in_sec=None))]
     fn new(
         language: &str,
         cache_dir: Option<PathBuf>,
         offline: bool,
         base_url: Option<String>,
         xml_url: Option<String>,
+        cache_expiration_in_sec: Option<u64>,
     ) -> PyResult<Self> {
         if !matches!(language, "en" | "he") {
             return Err(PyValueError::new_err("language must be en or he"));
@@ -45,6 +46,7 @@ impl Client {
         let mut config = ClientConfig {
             language: language.into(),
             offline,
+            cache_expiration_in_sec,
             ..ClientConfig::default()
         };
         if let Some(path) = cache_dir {

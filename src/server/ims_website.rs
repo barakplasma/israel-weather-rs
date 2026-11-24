@@ -92,7 +92,6 @@ impl WebsiteCache {
             .ok()?
             .ok()?
     }
-
 }
 
 async fn serve(
@@ -338,8 +337,8 @@ pub(super) async fn radar_satellite(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::SystemTime;
     use serde_json::Value;
+    use std::time::SystemTime;
     use crate::server::test_support::{NOW, request, state_at};
 
     #[test]

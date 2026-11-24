@@ -10,8 +10,8 @@ use serde::Deserialize;
 use serde_json::Value;
 use weather_api::ims_website::{
     CurrentResponse, ForecastResponse, LocationsResponse, RadarResponse, RegionsResponse,
-    SeaRegionsResponse, WarningDays, WarningMetadataResponse, WarningsResponse, WeatherCodesResponse,
-    WindDirectionsResponse,
+    SeaRegionsResponse, WarningDays, WarningMetadataResponse, WarningsResponse,
+    WeatherCodesResponse, WindDirectionsResponse,
 };
 
 const MAX_BODY: u64 = 16 * 1024 * 1024;
@@ -103,7 +103,6 @@ impl Entry {
     pub fn fresh(&self, ttl: Duration) -> bool {
         self.fetched.elapsed().is_ok_and(|age| age < ttl)
     }
-
 }
 
 #[derive(Clone)]
@@ -111,6 +110,7 @@ pub(crate) struct WebsiteStore {
     pub(crate) dir: PathBuf,
     pub(crate) base: String,
     pub(crate) offline: bool,
+    pub(crate) ttl_override: Option<Duration>,
 }
 
 impl WebsiteStore {
@@ -121,6 +121,16 @@ impl WebsiteStore {
             base: crate::non_empty_env("WEATHER_IMS_BASE_URL")
                 .unwrap_or_else(|| "https://ims.gov.il/en".into()),
             offline,
+            ttl_override: None,
+        }
+    }
+
+    pub(crate) fn ttl(&self, endpoint: Endpoint) -> Duration {
+        match endpoint {
+            Endpoint::Current | Endpoint::Forecast | Endpoint::Warnings => {
+                self.ttl_override.unwrap_or_else(|| endpoint.ttl())
+            }
+            _ => endpoint.ttl(),
         }
     }
 
@@ -199,7 +209,7 @@ impl WebsiteStore {
         let path = self
             .dir
             .join(format!("israel-weather-rs-website-{key}.json"));
-        let ttl = endpoint.ttl();
+        let ttl = self.ttl(endpoint);
         let mut cached = Self::read(&path, endpoint, lid);
         if endpoint == Endpoint::Forecast
             && language == "en"
@@ -280,4 +290,3 @@ impl WebsiteStore {
         result
     }
 }
-
