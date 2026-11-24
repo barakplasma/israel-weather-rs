@@ -17,6 +17,7 @@ use chrono_tz::Tz;
 use serde::Deserialize;
 use serde_json::{Number, Value, json};
 
+use weather_api::ims_website::{CurrentAnalysis, Scalar};
 use weather_api::openmeteo::{
     self as om, Current, CurrentWeather, DailyVar, HourlyVar, Series, Time,
 };
@@ -377,6 +378,39 @@ impl TimeFormat {
     }
 }
 
+// Only overlay measurements whose meaning and units match the existing current API.
+// Unknown/missing/sentinel values are not allowed to erase the original forecast.
+fn enrich_current(point: &mut HourlyPoint, analysis: &CurrentAnalysis) {
+    fn valid(value: &Option<Scalar>, low: f64, high: f64) -> Option<f32> {
+        value
+            .as_ref()?
+            .number()
+            .filter(|v| (low..=high).contains(v))
+            .map(|v| v as f32)
+    }
+    if let Some(v) = valid(&analysis.temperature, -90.0, 65.0) {
+        point.temperature = v;
+    }
+    if let Some(v) = valid(&analysis.relative_humidity, 0.0, 100.0) {
+        point.relative_humidity = v;
+    }
+    if let Some(v) = valid(&analysis.dew_point_temp, -90.0, 65.0) {
+        point.dew_point = v;
+    }
+    if let Some(v) = valid(&analysis.feels_like, -90.0, 80.0) {
+        point.feels_like = v;
+    }
+    if let Some(v) = valid(&analysis.wind_speed, 0.0, 250.0) {
+        point.wind_speed = v;
+    }
+    if let Some(v) = valid(&analysis.gust_speed, 0.0, 250.0) {
+        point.wind_gust = Some(v);
+    }
+    if let Some(v) = valid(&analysis.u_v_index, 0.0, 25.0) {
+        point.uv_index = Some(v);
+    }
+}
+
 #[utoipa::path(get, path = "/v1/forecast", tag = "open-meteo", params(Params),
     responses((status = 200, body = om::Forecast), (status = 400, description = "Bad parameter", body = weather_api::ApiError), (status = 503, description = "No forecast loaded yet", body = weather_api::ApiError)))]
 pub async fn forecast(
@@ -454,9 +488,18 @@ pub async fn forecast(
 
     if params.current_weather == Some(true) || !current_vars.is_empty() {
         let hour_start = now.timestamp() - now.timestamp().rem_euclid(3600);
-        let point = by_time.get(&hour_start).copied();
+        let mut point = by_time.get(&hour_start).copied().cloned();
+        if let Some(point) = point.as_mut()
+            && let Some(analysis) = state.website.current_for(meta.location_id, now).await
+        {
+            enrich_current(point, &analysis);
+        }
         let hour = DateTime::from_timestamp(hour_start, 0).expect("valid timestamp");
-        let value = |v: HourlyVar| point.and_then(|p| num(v.value(p, &units, loc_lat, loc_lon)));
+        let value = |v: HourlyVar| {
+            point
+                .as_ref()
+                .and_then(|p| num(v.value(p, &units, loc_lat, loc_lon)))
+        };
 
         if !current_vars.is_empty() {
             let mut cur_units = units_map(vec![("time", fmt.unit()), ("interval", "seconds")]);

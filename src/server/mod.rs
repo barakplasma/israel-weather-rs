@@ -8,6 +8,7 @@
 
 mod api;
 pub mod codes;
+mod ims_website;
 mod metno;
 mod openapi;
 mod openmeteo;
@@ -133,6 +134,7 @@ pub struct AppState {
     schedule: Arc<str>,
     clock: Clock,
     stats: Arc<stats::Stats>,
+    website: ims_website::WebsiteCache,
 }
 
 impl AppState {
@@ -143,6 +145,7 @@ impl AppState {
             schedule: schedule.into(),
             stats: Arc::new(stats::Stats::new(clock())),
             clock,
+            website: ims_website::WebsiteCache::new(true, true),
         }
     }
 
@@ -344,6 +347,28 @@ pub fn router(state: AppState) -> Router {
         .route("/openapi.json", get(openapi::openapi))
         .route("/api/status", get(api::status))
         .route("/api/ims", get(api::extras))
+        .route("/{language}/now_analysis/{lid}", get(ims_website::current))
+        .route(
+            "/{language}/full_forecast_data/{lid}",
+            get(ims_website::forecast),
+        )
+        .route("/{language}/locations_info", get(ims_website::locations))
+        .route("/{language}/warnings", get(ims_website::warnings))
+        .route(
+            "/{language}/warnings_metadata",
+            get(ims_website::warnings_metadata),
+        )
+        .route("/{language}/weather_codes", get(ims_website::weather_codes))
+        .route(
+            "/{language}/wind_directions",
+            get(ims_website::wind_directions),
+        )
+        .route("/{language}/regions", get(ims_website::regions))
+        .route("/{language}/sea_regions", get(ims_website::sea_regions))
+        .route(
+            "/{language}/radar_satellite",
+            get(ims_website::radar_satellite),
+        )
         .route("/v1/forecast", get(openmeteo::forecast))
         .route("/v1/search", get(api::search))
         .route(
@@ -532,7 +557,8 @@ pub struct ServeOptions {
 /// Run the server until SIGINT/SIGTERM.
 pub async fn serve(opts: ServeOptions) -> Result<(), Box<dyn std::error::Error>> {
     let schedule = parse_schedule(&opts.schedule)?;
-    let state = AppState::new(&opts.schedule, Arc::new(Utc::now));
+    let mut state = AppState::new(&opts.schedule, Arc::new(Utc::now));
+    state.website = ims_website::WebsiteCache::new(opts.refresh.offline, opts.refresh.ims_json);
 
     refresh(&state, opts.refresh).await;
     if state.snapshot().is_none() {

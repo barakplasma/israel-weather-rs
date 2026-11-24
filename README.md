@@ -151,6 +151,26 @@ The server serializes, and the web UI deserializes, the same structs from `crate
 | `/api/status`, `/healthz` | | Data loaded (hourly rows by source, forecast range), cache files, last 24 refreshes with per-source errors, per-route request counts/latency, version/commit/memory. Health check is 503 until data is loaded |
 | `/weatherapi/locationforecast/2.0/compact?lat=..&lon=..` (and `/complete`) | [MET Norway](https://api.met.no/weatherapi/locationforecast/2.0/documentation) | GeoJSON `timeseries` with `instant`, `next_1_hours`, `next_6_hours`, `next_12_hours`. Sends `Last-Modified`/`Expires` |
 
+### IMS website-compatible endpoints
+
+See the [architecture specification](docs/architecture-spec.md) for the two read models and compatibility contracts.
+
+The server also exposes the JSON envelopes used by [py-weatheril](https://github.com/t0mer/py-weatheril), without requiring Python. Use `en` or `he` and an IMS location ID (e.g. 2):
+
+| GET path | Data |
+|---|---|
+| `/{language}/now_analysis/{lid}` | Current IMS analysis (not a station observation) |
+| `/{language}/full_forecast_data/{lid}` | Native per-location hourly/daily forecast |
+| `/{language}/locations_info` | Location metadata |
+| `/{language}/warnings`, `/{language}/warnings_metadata` | Raw warnings and warning dictionaries |
+| `/{language}/weather_codes`, `/{language}/wind_directions` | Code dictionaries |
+| `/{language}/regions`, `/{language}/sea_regions` | Region metadata |
+| `/{language}/radar_satellite` | Radar/satellite frame manifest (no image downloads) |
+
+These routes preserve upstream field names, missing-value sentinels and JSON nesting. They are provisional until live integration testing; they are not the separately normalized API proposed in the [endpoint reference](docs/ims-website-api.md). The English per-location forecast can reuse the existing bulk JSON cache. Other requests use a bounded, language-specific, on-demand disk cache: 5 minutes for current/warnings/radar, 1 hour for forecasts, 24 hours for dictionaries. Stale valid data is served when upstream fails, with `X-IMS-Fetched-At` and `X-IMS-Stale` headers. Offline mode never fetches remotely; `--ims-json false` disables these routes (503). Unknown location IDs return 404; invalid language returns 400. See the OpenAPI document for paths.
+
+Existing Open-Meteo current/current_weather responses can best-effort enrich matching-hour fields from fresh IMS current analysis. A one-second wait budget, field validation and forecast fallback protect existing clients. Offline mode uses matching-hour cached analysis (even if its refresh TTL elapsed) without network requests; otherwise it retains the forecast. The existing `/api/ims` response also optionally includes `current_analysis` with the typed IMS-specific fields (such as PM10 and wave height); it is omitted on fallback. Hourly/daily and MET Norway forecasts remain unchanged.
+
 Data sources, refreshed together on the schedule:
 
 | Source | What it gives | If it fails |

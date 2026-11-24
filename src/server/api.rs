@@ -123,7 +123,12 @@ pub async fn extras(
     let resolved = resolve(&snap, LocationQuery::Coords(lat, lon))?;
     let now = state.now();
     let today = now.with_timezone(&chrono_tz::Asia::Jerusalem).date_naive();
+    let current_analysis = state
+        .website
+        .current_for(resolved.location.location_meta_data.location_id, now)
+        .await;
     Ok(Json(ims::Extras {
+        current_analysis,
         location: place(resolved.location),
         distance_km: round(resolved.distance_km.unwrap_or(0.0), 1),
         warnings: snap
