@@ -8,7 +8,7 @@ Israeli weather users need a reliable, cache-first service for CLI, browsers and
 
 ## Solution
 
-Keep the scheduled forecast snapshot as the primary read model. Add an independent, typed, on-demand website compatibility layer. Use optional current analysis to enrich compatible existing current-weather fields; errors, offline mode, stale data and timeouts must retain the original forecast.
+Keep the scheduled forecast snapshot as the primary read model. Add an independent, typed, on-demand website compatibility layer. Use optional current analysis to enrich compatible existing current-weather fields; errors, unavailable or mismatched cached data and timeouts must retain the original forecast. Offline mode may enrich using matching-hour cached analysis without network access.
 
 ```mermaid
 flowchart TD
@@ -25,7 +25,7 @@ flowchart TD
     Parsers -. "English bulk forecast cache" .-> Cache
     Cache --> Models["Typed wire validation"]
     Models --> Native["10 native IMS JSON routes"]
-    Models -. "fresh matching-hour analysis; best effort" .-> OM
+    Models -. "matching-hour analysis; best effort" .-> OM
     Models -. "optional typed analysis" .-> API
     OM --> PWA["Leptos PWA"]
     API --> PWA
@@ -116,9 +116,9 @@ classDiagram
 - Axum refreshes snapshots on the configured schedule; normalized Open-Meteo, MET Norway, IMS extras, geocoding, health/status and embedded UI read existing state. The shared weather-api crate supplies server/PWA DTOs.
 - WebsiteCache isolates language, endpoint and location keys, validates data before replacing disk entries, bounds response sizes, and performs blocking work off the async executor. A shared gate and retry backoff bound work. English per-location forecast may reuse the scheduled bulk cache.
 - Endpoint-specific Serde types validate the known shapes of all ten native JSON routes. The server returns the original Value, not a reserialized typed projection; unknown keys, number-vs-string representation, nulls and sentinels survive. The models are partial contracts, not proof of exhaustive upstream schemas.
-- Current analysis can overlay compatible temperature, humidity, dew point, apparent temperature, wind speed/gust and UV onto the existing Open-Meteo current/current_weather point only for fresh, matching-hour records. Unit conversion stays with existing handlers. Missing or out-of-range fields retain the forecast. Hourly/daily forecasts and MET Norway forecast semantics are unchanged. Rain accumulation, codes and wind direction are not replaced until semantic equivalence is verified.
-- The existing IMS extras endpoint may include a typed current_analysis object, omitted entirely on failure, stale/mismatched data or offline operation. Existing fields are unchanged.
-- Best-effort enrichment uses a short 350 ms wait budget; if busy, unavailable, disabled, stale, offline or timed out, the original response wins. A started bounded refresh can finish and warm the cache.
+- Current analysis can overlay compatible temperature, humidity, dew point, apparent temperature, wind speed/gust and UV onto the existing Open-Meteo current/current_weather point only for fresh, matching-hour records online; offline may use TTL-expired cached records from the same hour. Unit conversion stays with existing handlers. Missing or out-of-range fields retain the forecast. Hourly/daily forecasts and MET Norway forecast semantics are unchanged. Rain accumulation, codes and wind direction are not replaced until semantic equivalence is verified.
+- The existing IMS extras endpoint may include a typed current_analysis object, omitted entirely if no eligible cached or live record exists. Existing fields are unchanged.
+- Best-effort enrichment uses a one-second wait budget; if busy, unavailable, disabled, stale online, mismatched or timed out, the original response wins. Offline mode never makes network requests and may use matching-hour cached data even after the refresh TTL. A started bounded refresh can finish and warm the cache.
 - No PyO3 or new runtime dependency.
 
 ### Native request and fallback
@@ -151,7 +151,7 @@ sequenceDiagram
 
 ## Testing Decisions
 
-Prefer the existing Axum router and fixture seams, not tests of private implementation details. Test native envelopes, locale isolation, offline fallback, malformed known fields, unknown fields, current-time alignment and per-field enrichment; retain the existing Open-Meteo/MET Norway client suite and web/CLI tests. Use synthetic or existing captured fixtures; live checks remain opt-in. CI must pass formatting, clippy, unit tests, release build and compatibility tests.
+Prefer the existing Axum router and fixture seams, not tests of private implementation details. Test native envelopes, locale isolation, offline cache enrichment and fallback, malformed known fields, unknown fields, current-time alignment and per-field enrichment; retain the existing Open-Meteo/MET Norway client suite and web/CLI tests. Use synthetic or existing captured fixtures; live checks remain opt-in. CI must pass formatting, clippy, unit tests, release build and compatibility tests.
 
 ## Out of Scope
 

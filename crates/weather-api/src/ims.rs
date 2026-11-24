@@ -40,7 +40,7 @@ pub struct Extras {
     pub warnings: Vec<Warning>,
     /// Today's, when IMS has published it.
     pub country_forecast: Option<CountryForecast>,
-    /// Optional fresh IMS current analysis; omitted if unavailable or offline.
+    /// Optional matching-hour IMS current analysis; omitted if unavailable.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub current_analysis: Option<crate::ims_website::CurrentAnalysis>,
 }

@@ -26,6 +26,7 @@ use super::{ApiError, AppState};
 
 const MAX_BODY: u64 = 16 * 1024 * 1024;
 const RETRY_DELAY: Duration = Duration::from_secs(60);
+const ENRICHMENT_WAIT: Duration = Duration::from_secs(1);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Endpoint {
@@ -80,8 +81,9 @@ impl Endpoint {
                         && (day.hourly.is_some() || day.daily.is_some())
                 })
             }),
-            Self::Locations => LocationsResponse::deserialize(root)
-                .is_ok_and(|response| !response.data.is_empty()),
+            Self::Locations => {
+                LocationsResponse::deserialize(root).is_ok_and(|response| !response.data.is_empty())
+            }
             Self::Warnings => WarningsResponse::deserialize(root).is_ok_and(|response| {
                 match response.data.full_warnings_data {
                     Some(WarningDays::EmptyArray(rows)) => rows.is_empty(),
@@ -259,11 +261,15 @@ impl WebsiteCache {
         }
     }
 
-    // Optional enrichment: never wait behind a fetch, never query in offline mode, and
+    // Optional enrichment: never wait behind a fetch, never use the network in offline mode, and
     // give the original endpoint a short latency budget. A timed-out blocking refresh can
     // finish and populate the cache, but the original response uses its forecast fallback.
-    pub(super) async fn current_for(&self, lid: i16, now: DateTime<Utc>) -> Option<CurrentAnalysis> {
-        if self.offline || !self.enabled {
+    pub(super) async fn current_for(
+        &self,
+        lid: i16,
+        now: DateTime<Utc>,
+    ) -> Option<CurrentAnalysis> {
+        if !self.enabled {
             return None;
         }
         let gate = self.gate.clone().try_lock_owned().ok()?;
@@ -271,7 +277,9 @@ impl WebsiteCache {
         let job = tokio::task::spawn_blocking(move || {
             let mut gate = gate;
             let entry = cache.fetch("en", Endpoint::Current, Some(lid), &mut gate)?;
-            if !entry.fresh(Endpoint::Current.ttl()) {
+            // Offline mode can use a cached analysis past its refresh TTL, but never
+            // substitute analysis from a different hour or the future.
+            if !cache.offline && !entry.fresh(Endpoint::Current.ttl()) {
                 return None;
             }
             let response = CurrentResponse::deserialize(&entry.value).ok()?;
@@ -284,7 +292,7 @@ impl WebsiteCache {
             }
             Some(record.clone())
         });
-        tokio::time::timeout(Duration::from_millis(350), job)
+        tokio::time::timeout(ENRICHMENT_WAIT, job)
             .await
             .ok()?
             .ok()?
@@ -603,13 +611,15 @@ mod tests {
         let warnings: Value =
             serde_json::from_str(include_str!("../../tests/fixtures/ims_warnings.json")).unwrap();
         assert!(Endpoint::Warnings.validate(&warnings, None));
-        let metadata: Value =
-            serde_json::from_str(include_str!("../../tests/fixtures/ims_warnings_metadata.json"))
-                .unwrap();
+        let metadata: Value = serde_json::from_str(include_str!(
+            "../../tests/fixtures/ims_warnings_metadata.json"
+        ))
+        .unwrap();
         assert!(Endpoint::WarningsMetadata.validate(&metadata, None));
-        let full: Value =
-            serde_json::from_str(include_str!("../../tests/fixtures/ims_full_forecast_data.json"))
-                .unwrap();
+        let full: Value = serde_json::from_str(include_str!(
+            "../../tests/fixtures/ims_full_forecast_data.json"
+        ))
+        .unwrap();
         for (lid, days) in full["data"]["info"].as_object().unwrap() {
             let envelope = serde_json::json!({"data": days});
             assert!(Endpoint::Forecast.validate(&envelope, lid.parse().ok()));
@@ -671,8 +681,21 @@ mod tests {
         let (_, mismatch_extras) = get_json(state.clone(), extras).await;
         assert!(mismatch_extras.get("current_analysis").is_none());
         state.website.offline = true;
-        let (_, offline) = get_json(state, query).await;
+        let (_, offline) = get_json(state.clone(), query).await;
         assert_eq!(offline["current"], baseline["current"]);
+        // Even a TTL-expired cache can enrich offline if the analysis is for this hour.
+        record["data"]["2"]["forecast_time"] = serde_json::json!("2026-09-30 21:00:00");
+        WebsiteCache::save(&path, &record).unwrap();
+        std::fs::File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(SystemTime::now() - Duration::from_secs(600))
+            .unwrap();
+        let (_, cached) = get_json(state.clone(), query).await;
+        assert_eq!(cached["current"]["temperature_2m"], 37.5);
+        let (_, cached_extras) = get_json(state, extras).await;
+        assert_eq!(cached_extras["current_analysis"]["pm10"], "25");
         std::fs::remove_dir_all(dir).unwrap();
     }
 
