@@ -1,0 +1,21 @@
+[build-system]
+requires = ["maturin>=1.9,<2"]
+build-backend = "maturin"
+
+[project]
+name = "israel-weather-rs"
+requires-python = ">=3.10"
+dynamic = ["version"]
+dependencies = ["tzdata; platform_system == 'Windows'"]
+description = "Native Rust client for IMS weather forecasts and website data"
+readme = "README.md"
+license = "MIT"
+classifiers = ["Programming Language :: Rust", "Programming Language :: Python :: 3"]
+
+[project.urls]
+Repository = "https://github.com/barakplasma/israel-weather-rs"
+
+[tool.maturin]
+python-source = "python"
+module-name = "israel_weather._native"
+bindings = "pyo3"

@@ -102,6 +102,10 @@ cd israel-weather-rs
 cargo install --path .
 ```
 
+## Python client (optional)
+
+The native `israel_weather` package uses the Rust library without a server. See [Python bindings](docs/python-bindings.md). Wheel artifacts are built by CI; no PyPI release yet.
+
 ## Web server (optional)
 
 Build with the `server` feature to get `weather serve`. It refreshes the IMS forecast on a cron schedule and serves a web UI plus weather APIs that existing clients already speak. Pre-built binaries are published as `weather-server-<target>` on the releases page.

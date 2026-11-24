@@ -10,6 +10,8 @@ license = "MIT"
 
 [workspace]
 members = [".", "crates/weather-api", "web"]
+# Separate wheel dependency resolution leaves the default Rust lockfile unaffected.
+exclude = ["crates/weather-python"]
 # The web UI only builds for wasm32; `trunk` builds it (see web/README.md).
 default-members = [".", "crates/weather-api"]
 
