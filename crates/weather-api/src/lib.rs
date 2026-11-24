@@ -6,6 +6,7 @@
 
 pub mod geocoding;
 pub mod ims;
+pub mod ims_website;
 pub mod openmeteo;
 pub mod status;
 

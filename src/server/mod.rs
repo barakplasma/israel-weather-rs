@@ -348,15 +348,27 @@ pub fn router(state: AppState) -> Router {
         .route("/api/status", get(api::status))
         .route("/api/ims", get(api::extras))
         .route("/{language}/now_analysis/{lid}", get(ims_website::current))
-        .route("/{language}/full_forecast_data/{lid}", get(ims_website::forecast))
+        .route(
+            "/{language}/full_forecast_data/{lid}",
+            get(ims_website::forecast),
+        )
         .route("/{language}/locations_info", get(ims_website::locations))
         .route("/{language}/warnings", get(ims_website::warnings))
-        .route("/{language}/warnings_metadata", get(ims_website::warnings_metadata))
+        .route(
+            "/{language}/warnings_metadata",
+            get(ims_website::warnings_metadata),
+        )
         .route("/{language}/weather_codes", get(ims_website::weather_codes))
-        .route("/{language}/wind_directions", get(ims_website::wind_directions))
+        .route(
+            "/{language}/wind_directions",
+            get(ims_website::wind_directions),
+        )
         .route("/{language}/regions", get(ims_website::regions))
         .route("/{language}/sea_regions", get(ims_website::sea_regions))
-        .route("/{language}/radar_satellite", get(ims_website::radar_satellite))
+        .route(
+            "/{language}/radar_satellite",
+            get(ims_website::radar_satellite),
+        )
         .route("/v1/forecast", get(openmeteo::forecast))
         .route("/v1/search", get(api::search))
         .route(

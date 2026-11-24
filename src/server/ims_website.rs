@@ -8,13 +8,19 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 
+use axum::Json;
 use axum::extract::{Path as RoutePath, State};
 use axum::http::{HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::Json;
 use chrono::{DateTime, Utc};
+use serde::Deserialize;
 use serde_json::Value;
 use tokio::sync::Mutex;
+use weather_api::ims_website::{
+    CurrentAnalysis, CurrentResponse, ForecastResponse, LocationsResponse, RadarResponse,
+    RegionsResponse, SeaRegionsResponse, WarningDays, WarningMetadataResponse, WarningsResponse,
+    WeatherCodesResponse, WindDirectionsResponse,
+};
 
 use super::{ApiError, AppState};
 
@@ -60,27 +66,37 @@ impl Endpoint {
     }
 
     fn validate(self, root: &Value, lid: Option<i16>) -> bool {
-        let Some(data) = root.get("data") else {
-            return false;
-        };
         match self {
-            Self::Current => lid
-                .and_then(|id| data.get(id.to_string()))
-                .and_then(Value::as_object)
-                .is_some_and(|record| !record.is_empty()),
-            Self::Forecast => data.as_object().is_some_and(|days| {
-                days.iter().any(|(date, day)| {
+            Self::Current => CurrentResponse::deserialize(root).is_ok_and(|response| {
+                lid.is_some_and(|id| response.data.contains_key(&id.to_string()))
+                    && lid
+                        .and_then(|id| root.get("data")?.get(id.to_string()))
+                        .and_then(Value::as_object)
+                        .is_some_and(|record| !record.is_empty())
+            }),
+            Self::Forecast => ForecastResponse::deserialize(root).is_ok_and(|response| {
+                response.data.iter().any(|(date, day)| {
                     chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").is_ok()
-                        && (day.get("hourly").is_some() || day.get("daily").is_some())
+                        && (day.hourly.is_some() || day.daily.is_some())
                 })
             }),
-            Self::Regions => data.is_array(),
-            Self::RadarSatellite => data.get("types").is_some_and(Value::is_object),
-            Self::Warnings => data.is_object(),
-            Self::WarningsMetadata => data.get("ims_warning_type").is_some()
-                && data.get("warning_groups").is_some()
-                && data.get("warning_severity").is_some(),
-            _ => data.as_object().is_some_and(|map| !map.is_empty()),
+            Self::Locations => LocationsResponse::deserialize(root)
+                .is_ok_and(|response| !response.data.is_empty()),
+            Self::Warnings => WarningsResponse::deserialize(root).is_ok_and(|response| {
+                match response.data.full_warnings_data {
+                    Some(WarningDays::EmptyArray(rows)) => rows.is_empty(),
+                    _ => true,
+                }
+            }),
+            Self::WarningsMetadata => WarningMetadataResponse::deserialize(root).is_ok(),
+            Self::WeatherCodes => WeatherCodesResponse::deserialize(root)
+                .is_ok_and(|response| !response.data.is_empty()),
+            Self::WindDirections => WindDirectionsResponse::deserialize(root)
+                .is_ok_and(|response| !response.data.is_empty()),
+            Self::Regions => RegionsResponse::deserialize(root).is_ok(),
+            Self::SeaRegions => SeaRegionsResponse::deserialize(root)
+                .is_ok_and(|response| !response.data.is_empty()),
+            Self::RadarSatellite => RadarResponse::deserialize(root).is_ok(),
         }
     }
 }
@@ -170,7 +186,9 @@ impl WebsiteCache {
         if !self.base.trim_end_matches('/').ends_with("/en") {
             return None;
         }
-        let path = self.dir.join("israel-weather-rs-ims_full_forecast_data.json");
+        let path = self
+            .dir
+            .join("israel-weather-rs-ims_full_forecast_data.json");
         let file = std::fs::File::open(path).ok()?;
         let metadata = file.metadata().ok()?;
         // Bulk data can be larger than a single location.
@@ -184,11 +202,14 @@ impl WebsiteCache {
             return None;
         }
         let bulk: Value = serde_json::from_slice(&bytes).ok()?;
-        let value = serde_json::json!({"data": bulk.get("data")?.get("info")?.get(lid.to_string())?});
-        Endpoint::Forecast.validate(&value, Some(lid)).then_some(Entry {
-            value,
-            fetched: metadata.modified().ok()?,
-        })
+        let value =
+            serde_json::json!({"data": bulk.get("data")?.get("info")?.get(lid.to_string())?});
+        Endpoint::Forecast
+            .validate(&value, Some(lid))
+            .then_some(Entry {
+                value,
+                fetched: metadata.modified().ok()?,
+            })
     }
 
     fn fetch(
@@ -200,13 +221,17 @@ impl WebsiteCache {
     ) -> Option<Entry> {
         let suffix = lid.map_or_else(String::new, |id| format!("/{id}"));
         let key = format!("{language}-{}{}", endpoint.name(), suffix.replace('/', "-"));
-        let path = self.dir.join(format!("israel-weather-rs-website-{key}.json"));
+        let path = self
+            .dir
+            .join(format!("israel-weather-rs-website-{key}.json"));
         let ttl = endpoint.ttl();
         let mut cached = Self::read(&path, endpoint, lid);
         if endpoint == Endpoint::Forecast
             && language == "en"
             && let Some(bulk) = lid.and_then(|id| self.bulk_forecast(id))
-            && cached.as_ref().is_none_or(|entry| bulk.fetched > entry.fetched)
+            && cached
+                .as_ref()
+                .is_none_or(|entry| bulk.fetched > entry.fetched)
         {
             cached = Some(bulk);
         }
@@ -234,6 +259,37 @@ impl WebsiteCache {
         }
     }
 
+    // Optional enrichment: never wait behind a fetch, never query in offline mode, and
+    // give the original endpoint a short latency budget. A timed-out blocking refresh can
+    // finish and populate the cache, but the original response uses its forecast fallback.
+    pub(super) async fn current_for(&self, lid: i16, now: DateTime<Utc>) -> Option<CurrentAnalysis> {
+        if self.offline || !self.enabled {
+            return None;
+        }
+        let gate = self.gate.clone().try_lock_owned().ok()?;
+        let cache = self.clone();
+        let job = tokio::task::spawn_blocking(move || {
+            let mut gate = gate;
+            let entry = cache.fetch("en", Endpoint::Current, Some(lid), &mut gate)?;
+            if !entry.fresh(Endpoint::Current.ttl()) {
+                return None;
+            }
+            let response = CurrentResponse::deserialize(&entry.value).ok()?;
+            let record = response.data.get(&lid.to_string())?;
+            let time = crate::parse_time(record.forecast_time.as_deref()?).ok()?;
+            if time.timestamp() / 3600 != now.timestamp() / 3600
+                || time.timestamp() > now.timestamp()
+            {
+                return None;
+            }
+            Some(record.clone())
+        });
+        tokio::time::timeout(Duration::from_millis(350), job)
+            .await
+            .ok()?
+            .ok()?
+    }
+
     fn download(url: &str, endpoint: Endpoint, lid: Option<i16>) -> Result<Value, crate::Error> {
         let client = reqwest::blocking::Client::builder()
             .user_agent(concat!(
@@ -253,7 +309,9 @@ impl WebsiteCache {
         }
         let value = serde_json::from_slice(&bytes)?;
         if !endpoint.validate(&value, lid) {
-            return Err(crate::Error::Json("invalid IMS website response shape".into()));
+            return Err(crate::Error::Json(
+                "invalid IMS website response shape".into(),
+            ));
         }
         Ok(value)
     }
@@ -316,7 +374,12 @@ async fn serve(
     })
     .await
     .map_err(|_| ApiError::new(StatusCode::SERVICE_UNAVAILABLE, "IMS website task failed"))?
-    .ok_or_else(|| ApiError::new(StatusCode::SERVICE_UNAVAILABLE, "IMS website data unavailable"))?;
+    .ok_or_else(|| {
+        ApiError::new(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "IMS website data unavailable",
+        )
+    })?;
     Ok(entry.response(endpoint.ttl()))
 }
 
@@ -326,7 +389,7 @@ async fn serve(
     tag = "ims-website",
     params(("language" = String, Path, description = "he or en"), ("lid" = i16, Path, description = "IMS location ID")),
     responses(
-        (status = 200, description = "Upstream IMS JSON envelope", body = Object),
+        (status = 200, description = "Upstream IMS JSON envelope", body = CurrentResponse),
         (status = 400, description = "Invalid request", body = weather_api::ApiError),
         (status = 404, description = "Unknown location", body = weather_api::ApiError),
         (status = 503, description = "Unavailable", body = weather_api::ApiError)
@@ -345,7 +408,7 @@ pub(super) async fn current(
     tag = "ims-website",
     params(("language" = String, Path, description = "he or en"), ("lid" = i16, Path, description = "IMS location ID")),
     responses(
-        (status = 200, description = "Upstream IMS JSON envelope", body = Object),
+        (status = 200, description = "Upstream IMS JSON envelope", body = ForecastResponse),
         (status = 400, description = "Invalid request", body = weather_api::ApiError),
         (status = 404, description = "Unknown location", body = weather_api::ApiError),
         (status = 503, description = "Unavailable", body = weather_api::ApiError)
@@ -364,7 +427,7 @@ pub(super) async fn forecast(
     tag = "ims-website",
     params(("language" = String, Path, description = "he or en")),
     responses(
-        (status = 200, description = "Upstream IMS JSON envelope", body = Object),
+        (status = 200, description = "Upstream IMS JSON envelope", body = LocationsResponse),
         (status = 400, description = "Invalid request", body = weather_api::ApiError),
         (status = 404, description = "Unknown location", body = weather_api::ApiError),
         (status = 503, description = "Unavailable", body = weather_api::ApiError)
@@ -383,7 +446,7 @@ pub(super) async fn locations(
     tag = "ims-website",
     params(("language" = String, Path, description = "he or en")),
     responses(
-        (status = 200, description = "Upstream IMS JSON envelope", body = Object),
+        (status = 200, description = "Upstream IMS JSON envelope", body = WarningsResponse),
         (status = 400, description = "Invalid request", body = weather_api::ApiError),
         (status = 404, description = "Unknown location", body = weather_api::ApiError),
         (status = 503, description = "Unavailable", body = weather_api::ApiError)
@@ -402,7 +465,7 @@ pub(super) async fn warnings(
     tag = "ims-website",
     params(("language" = String, Path, description = "he or en")),
     responses(
-        (status = 200, description = "Upstream IMS JSON envelope", body = Object),
+        (status = 200, description = "Upstream IMS JSON envelope", body = WarningMetadataResponse),
         (status = 400, description = "Invalid request", body = weather_api::ApiError),
         (status = 404, description = "Unknown location", body = weather_api::ApiError),
         (status = 503, description = "Unavailable", body = weather_api::ApiError)
@@ -421,7 +484,7 @@ pub(super) async fn warnings_metadata(
     tag = "ims-website",
     params(("language" = String, Path, description = "he or en")),
     responses(
-        (status = 200, description = "Upstream IMS JSON envelope", body = Object),
+        (status = 200, description = "Upstream IMS JSON envelope", body = WeatherCodesResponse),
         (status = 400, description = "Invalid request", body = weather_api::ApiError),
         (status = 404, description = "Unknown location", body = weather_api::ApiError),
         (status = 503, description = "Unavailable", body = weather_api::ApiError)
@@ -440,7 +503,7 @@ pub(super) async fn weather_codes(
     tag = "ims-website",
     params(("language" = String, Path, description = "he or en")),
     responses(
-        (status = 200, description = "Upstream IMS JSON envelope", body = Object),
+        (status = 200, description = "Upstream IMS JSON envelope", body = WindDirectionsResponse),
         (status = 400, description = "Invalid request", body = weather_api::ApiError),
         (status = 404, description = "Unknown location", body = weather_api::ApiError),
         (status = 503, description = "Unavailable", body = weather_api::ApiError)
@@ -459,7 +522,7 @@ pub(super) async fn wind_directions(
     tag = "ims-website",
     params(("language" = String, Path, description = "he or en")),
     responses(
-        (status = 200, description = "Upstream IMS JSON envelope", body = Object),
+        (status = 200, description = "Upstream IMS JSON envelope", body = RegionsResponse),
         (status = 400, description = "Invalid request", body = weather_api::ApiError),
         (status = 404, description = "Unknown location", body = weather_api::ApiError),
         (status = 503, description = "Unavailable", body = weather_api::ApiError)
@@ -478,7 +541,7 @@ pub(super) async fn regions(
     tag = "ims-website",
     params(("language" = String, Path, description = "he or en")),
     responses(
-        (status = 200, description = "Upstream IMS JSON envelope", body = Object),
+        (status = 200, description = "Upstream IMS JSON envelope", body = SeaRegionsResponse),
         (status = 400, description = "Invalid request", body = weather_api::ApiError),
         (status = 404, description = "Unknown location", body = weather_api::ApiError),
         (status = 503, description = "Unavailable", body = weather_api::ApiError)
@@ -497,7 +560,7 @@ pub(super) async fn sea_regions(
     tag = "ims-website",
     params(("language" = String, Path, description = "he or en")),
     responses(
-        (status = 200, description = "Upstream IMS JSON envelope", body = Object),
+        (status = 200, description = "Upstream IMS JSON envelope", body = RadarResponse),
         (status = 400, description = "Invalid request", body = weather_api::ApiError),
         (status = 404, description = "Unknown location", body = weather_api::ApiError),
         (status = 503, description = "Unavailable", body = weather_api::ApiError)
@@ -531,13 +594,42 @@ mod tests {
         assert!(Endpoint::Regions.validate(&serde_json::json!({"data":[]}), None));
     }
 
+    #[test]
+    fn typed_validation_uses_existing_ims_fixtures() {
+        let locations: Value =
+            serde_json::from_str(include_str!("../../tests/fixtures/ims_locations_info.json"))
+                .unwrap();
+        assert!(Endpoint::Locations.validate(&locations, None));
+        let warnings: Value =
+            serde_json::from_str(include_str!("../../tests/fixtures/ims_warnings.json")).unwrap();
+        assert!(Endpoint::Warnings.validate(&warnings, None));
+        let metadata: Value =
+            serde_json::from_str(include_str!("../../tests/fixtures/ims_warnings_metadata.json"))
+                .unwrap();
+        assert!(Endpoint::WarningsMetadata.validate(&metadata, None));
+        let full: Value =
+            serde_json::from_str(include_str!("../../tests/fixtures/ims_full_forecast_data.json"))
+                .unwrap();
+        for (lid, days) in full["data"]["info"].as_object().unwrap() {
+            let envelope = serde_json::json!({"data": days});
+            assert!(Endpoint::Forecast.validate(&envelope, lid.parse().ok()));
+        }
+        assert!(!Endpoint::Current.validate(
+            &serde_json::json!({"data":{"2":{"temperature":{}}}}),
+            Some(2),
+        ));
+    }
+
     #[tokio::test]
     async fn offline_route_uses_language_specific_cache() {
         let mut state = state_at(NOW);
         let dir = std::env::temp_dir().join(format!(
             "weather-website-test-{}-{}",
             std::process::id(),
-            SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_nanos()
+            SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
         ));
         state.website.dir = dir.clone();
         let current = serde_json::json!({"data":{"2":{"temperature":"22.5","rain":"-999"}}});

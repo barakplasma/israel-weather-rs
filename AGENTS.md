@@ -2,6 +2,8 @@
 
 ## IMS upstream research and related implementations
 
+Read [the architecture specification](docs/architecture-spec.md) for the component and class-level design, testing seams and fallback contracts.
+
 Before adding or changing IMS website integrations, read [the IMS endpoint reference](docs/ims-website-api.md) and [the Python binding plan](docs/python-bindings.md).
 
 - [t0mer/py-weatheril](https://github.com/t0mer/py-weatheril): MIT-licensed Python client; useful reference for per-location current analysis and forecasts, bilingual metadata, regional warnings and radar/satellite images.

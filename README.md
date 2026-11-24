@@ -153,6 +153,8 @@ The server serializes, and the web UI deserializes, the same structs from `crate
 
 ### IMS website-compatible endpoints
 
+See the [architecture specification](docs/architecture-spec.md) for the two read models and compatibility contracts.
+
 The server also exposes the JSON envelopes used by [py-weatheril](https://github.com/t0mer/py-weatheril), without requiring Python. Use `en` or `he` and an IMS location ID (e.g. 2):
 
 | GET path | Data |
@@ -166,6 +168,8 @@ The server also exposes the JSON envelopes used by [py-weatheril](https://github
 | `/{language}/radar_satellite` | Radar/satellite frame manifest (no image downloads) |
 
 These routes preserve upstream field names, missing-value sentinels and JSON nesting. They are provisional until live integration testing; they are not the separately normalized API proposed in the [endpoint reference](docs/ims-website-api.md). The English per-location forecast can reuse the existing bulk JSON cache. Other requests use a bounded, language-specific, on-demand disk cache: 5 minutes for current/warnings/radar, 1 hour for forecasts, 24 hours for dictionaries. Stale valid data is served when upstream fails, with `X-IMS-Fetched-At` and `X-IMS-Stale` headers. Offline mode never fetches remotely; `--ims-json false` disables these routes (503). Unknown location IDs return 404; invalid language returns 400. See the OpenAPI document for paths.
+
+Existing Open-Meteo current/current_weather responses can best-effort enrich matching-hour fields from fresh IMS current analysis. A short wait budget, field validation and forecast fallback protect existing clients; offline mode skips this enrichment. Hourly/daily and MET Norway forecasts remain unchanged.
 
 Data sources, refreshed together on the schedule:
 
