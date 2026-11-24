@@ -621,6 +621,62 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn existing_routes_enrich_only_with_fresh_matching_analysis() {
+        use crate::server::test_support::get_json;
+
+        let mut state = state_at(NOW);
+        let dir = std::env::temp_dir().join(format!(
+            "weather-enrichment-test-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        state.website.dir = dir.clone();
+        let query = "/v1/forecast?latitude=32.0821&longitude=34.7802&current=temperature_2m,relative_humidity_2m,wind_gusts_10m&current_weather=true";
+        let extras = "/api/ims?latitude=32.0821&longitude=34.7802";
+        let (status, baseline) = get_json(state.clone(), query).await;
+        assert_eq!(status, StatusCode::OK);
+        let (_, base_extras) = get_json(state.clone(), extras).await;
+        assert!(base_extras.get("current_analysis").is_none());
+        let path = dir.join("israel-weather-rs-website-en-now_analysis-2.json");
+        let mut record = serde_json::json!({
+            "data": {"2": {"forecast_time":"2026-09-30 21:00:00",
+                "temperature":"37.5","relative_humidity":-999,"gust_speed":-999,
+                "pm10":"25","unmodeled_field":true}}
+        });
+        WebsiteCache::save(&path, &record).unwrap();
+        state.website.offline = false;
+        let (status, enriched) = get_json(state.clone(), query).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(enriched["current"]["temperature_2m"], 37.5);
+        assert_eq!(enriched["current_weather"]["temperature"], 37.5);
+        assert_eq!(
+            enriched["current"]["relative_humidity_2m"],
+            baseline["current"]["relative_humidity_2m"]
+        );
+        assert_eq!(
+            enriched["current"]["wind_gusts_10m"],
+            baseline["current"]["wind_gusts_10m"]
+        );
+        let (_, enriched_extras) = get_json(state.clone(), extras).await;
+        assert_eq!(enriched_extras["current_analysis"]["pm10"], "25");
+        let (_, native) = get_json(state.clone(), "/en/now_analysis/2").await;
+        assert_eq!(native, record);
+        record["data"]["2"]["forecast_time"] = serde_json::json!("2026-09-30 20:00:00");
+        WebsiteCache::save(&path, &record).unwrap();
+        let (_, mismatch) = get_json(state.clone(), query).await;
+        assert_eq!(mismatch["current"], baseline["current"]);
+        let (_, mismatch_extras) = get_json(state.clone(), extras).await;
+        assert!(mismatch_extras.get("current_analysis").is_none());
+        state.website.offline = true;
+        let (_, offline) = get_json(state, query).await;
+        assert_eq!(offline["current"], baseline["current"]);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[tokio::test]
     async fn offline_route_uses_language_specific_cache() {
         let mut state = state_at(NOW);
         let dir = std::env::temp_dir().join(format!(

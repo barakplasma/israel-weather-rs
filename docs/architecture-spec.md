@@ -26,6 +26,7 @@ flowchart TD
     Cache --> Models["Typed wire validation"]
     Models --> Native["10 native IMS JSON routes"]
     Models -. "fresh matching-hour analysis; best effort" .-> OM
+    Models -. "optional typed analysis" .-> API
     OM --> PWA["Leptos PWA"]
     API --> PWA
     OM --> Clients["Existing clients"]
@@ -43,8 +44,9 @@ flowchart TD
 6. As a client developer, I want unknown fields and numeric-string sentinels preserved on the compatibility routes.
 7. As an operator, I want bounded downloads, cache isolation, stale fallback and freshness headers.
 8. As an existing current-weather client, I want fresher compatible values when available, with per-field fallback and unchanged units.
-9. As an offline user, I want the existing snapshot without any new remote requests.
-10. As a maintainer, I want fixtures and behavioral API tests so upstream changes are detectable.
+9. As an IMS extras client, I want additional current analysis fields such as PM10 and wave height when available without losing the existing response.
+10. As an offline user, I want the existing snapshot without any new remote requests.
+11. As a maintainer, I want fixtures and behavioral API tests so upstream changes are detectable.
 
 ## Implementation Decisions
 
@@ -115,6 +117,7 @@ classDiagram
 - WebsiteCache isolates language, endpoint and location keys, validates data before replacing disk entries, bounds response sizes, and performs blocking work off the async executor. A shared gate and retry backoff bound work. English per-location forecast may reuse the scheduled bulk cache.
 - Endpoint-specific Serde types validate the known shapes of all ten native JSON routes. The server returns the original Value, not a reserialized typed projection; unknown keys, number-vs-string representation, nulls and sentinels survive. The models are partial contracts, not proof of exhaustive upstream schemas.
 - Current analysis can overlay compatible temperature, humidity, dew point, apparent temperature, wind speed/gust and UV onto the existing Open-Meteo current/current_weather point only for fresh, matching-hour records. Unit conversion stays with existing handlers. Missing or out-of-range fields retain the forecast. Hourly/daily forecasts and MET Norway forecast semantics are unchanged. Rain accumulation, codes and wind direction are not replaced until semantic equivalence is verified.
+- The existing IMS extras endpoint may include a typed current_analysis object, omitted entirely on failure, stale/mismatched data or offline operation. Existing fields are unchanged.
 - Best-effort enrichment uses a short 350 ms wait budget; if busy, unavailable, disabled, stale, offline or timed out, the original response wins. A started bounded refresh can finish and warm the cache.
 - No PyO3 or new runtime dependency.
 

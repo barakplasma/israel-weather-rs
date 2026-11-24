@@ -488,7 +488,7 @@ pub async fn forecast(
 
     if params.current_weather == Some(true) || !current_vars.is_empty() {
         let hour_start = now.timestamp() - now.timestamp().rem_euclid(3600);
-        let mut point = by_time.get(&hour_start).map(|p| (*p).clone());
+        let mut point = by_time.get(&hour_start).copied().cloned();
         if let Some(point) = point.as_mut()
             && let Some(analysis) = state.website.current_for(meta.location_id, now).await
         {
