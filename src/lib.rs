@@ -10,9 +10,11 @@ use chrono::{DateTime, FixedOffset, NaiveDateTime, TimeZone, Utc};
 use chrono_tz::Asia::Jerusalem;
 use serde_xml_rs::from_str;
 
+pub mod client;
 pub mod hourly;
 pub mod ims_json;
 pub mod ims_structs;
+pub mod ims_website;
 #[cfg(feature = "server")]
 pub mod server;
 
@@ -137,24 +139,23 @@ pub fn init_logging_with_default(default_filter: &str) {
         .try_init();
 }
 
-fn build_cache(offline: bool) -> Result<Cache, Error> {
+fn build_cache(offline: bool, dir: &std::path::Path) -> Result<Cache, Error> {
     Ok(Cache::builder()
-        .dir(cache_dir())
+        .dir(dir.to_path_buf())
         .connect_timeout(Duration::from_secs(60))
         .timeout(Duration::from_secs(60))
         .offline(offline)
         .build()?)
 }
 
-fn make_cache(offline: bool) -> Result<PathBuf, Error> {
+fn make_cache(offline: bool, dir: &std::path::Path, url: &str) -> Result<PathBuf, Error> {
     trace!("build cache offline={}", offline);
-    let url = weather_url();
 
-    match build_cache(offline)?.cached_path(&url) {
+    match build_cache(offline, dir)?.cached_path(url) {
         Ok(path) => Ok(path),
         Err(e) if !offline => {
             warn!("Download failed, falling back to cached data: {}", e);
-            Ok(build_cache(true)?.cached_path(&url)?)
+            Ok(build_cache(true, dir)?.cached_path(url)?)
         }
         Err(e) => Err(e.into()),
     }
@@ -165,7 +166,15 @@ fn make_cache(offline: bool) -> Result<PathBuf, Error> {
 pub fn get_israeli_weather_forecast(
     offline: bool,
 ) -> Result<ims_structs::LocationForecasts, Error> {
-    let xml_path = make_cache(offline)?;
+    forecast_with_config(offline, &cache_dir(), &weather_url())
+}
+
+pub(crate) fn forecast_with_config(
+    offline: bool,
+    dir: &std::path::Path,
+    url: &str,
+) -> Result<ims_structs::LocationForecasts, Error> {
+    let xml_path = make_cache(offline, dir, url)?;
     trace!("{}", xml_path.display());
     let forecast_xml = std::fs::read_to_string(xml_path)?;
     parse_forecast(&forecast_xml)
