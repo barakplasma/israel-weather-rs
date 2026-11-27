@@ -110,13 +110,18 @@ mod tests {
 
     #[test]
     fn scrub_removes_query_and_credentials() {
-        let mut event = Event::default();
-        event.message =
-            Some("fetch failed: error for url (http://h/x?token=SECRET&a=1) after 3s".into());
-        let mut req = Request::default();
-        req.url = Some("http://h/v1/forecast?token=SECRET".parse().unwrap());
-        req.query_string = Some("token=SECRET".into());
-        req.cookies = Some("sid=SECRET".into());
+        let mut event = Event {
+            message: Some(
+                "fetch failed: error for url (http://h/x?token=SECRET&a=1) after 3s".into(),
+            ),
+            ..Default::default()
+        };
+        let mut req = Request {
+            url: Some("http://h/v1/forecast?token=SECRET".parse().unwrap()),
+            query_string: Some("token=SECRET".into()),
+            cookies: Some("sid=SECRET".into()),
+            ..Default::default()
+        };
         req.headers
             .insert("Authorization".into(), "Bearer SECRET".into());
         req.headers.insert("accept".into(), "*/*".into());
