@@ -1,6 +1,6 @@
 [package]
 name = "weather-web"
-version = "0.4.0"
+version = "0.8.1"
 edition = "2024"
 rust-version = "1.98"
 description = "Web UI for `weather serve`, built with trunk and embedded in the server binary"
