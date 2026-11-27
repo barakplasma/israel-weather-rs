@@ -8,11 +8,13 @@
 
 mod api;
 pub mod codes;
+pub mod error_reporting;
 mod ims_website;
 mod metno;
 mod openapi;
 mod openmeteo;
 mod stats;
+pub mod telemetry;
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -444,6 +446,7 @@ pub fn router(state: AppState) -> Router {
             state.clone(),
             stats::track,
         ))
+        .route_layer(axum::middleware::from_fn(telemetry::http))
         .fallback(web_asset)
         .layer(axum::middleware::map_response(allow_any_origin))
         .layer(axum::middleware::from_fn(cache_headers))
@@ -526,18 +529,29 @@ fn fetch_extras(
 /// Download (or fall back to cached copies of) the forecast and publish it to `state`.
 /// If the XML fails but an earlier snapshot exists, it is rebuilt with any new JSON data.
 pub async fn refresh(state: &AppState, opts: RefreshOptions) {
+    use tracing::Instrument;
+    refresh_inner(state, opts)
+        .instrument(tracing::info_span!("refresh forecast"))
+        .await
+}
+
+async fn refresh_inner(state: &AppState, opts: RefreshOptions) {
     let prev = state.snapshot();
     let prev_extras = prev.as_ref().map(|s| s.extras.clone()).unwrap_or_default();
     let now = state.now();
     let started = std::time::Instant::now();
+    let span = tracing::Span::current();
     let result = tokio::task::spawn_blocking(move || {
-        let xml = crate::get_israeli_weather_forecast(opts.offline);
+        let _entered = span.entered();
+        let xml = tracing::info_span!("fetch forecast xml", otel.kind = "client")
+            .in_scope(|| crate::get_israeli_weather_forecast(opts.offline));
         let mut sources = vec![SourceResult {
             name: "forecast xml".into(),
             error: xml.as_ref().err().map(ToString::to_string),
         }];
         let extras = if opts.ims_json {
-            fetch_extras(opts.offline, prev_extras, now, &mut sources)
+            tracing::info_span!("fetch ims json", otel.kind = "client")
+                .in_scope(|| fetch_extras(opts.offline, prev_extras, now, &mut sources))
         } else {
             Extras::default()
         };
@@ -557,9 +571,11 @@ pub async fn refresh(state: &AppState, opts: RefreshOptions) {
             let locations = data.location.len();
             let hourly_json = extras.full.is_some();
             state.set_snapshot(Snapshot::with_extras(data, now, extras));
+            telemetry::record_refresh(true, locations);
             info!(locations, hourly_json, "forecast refreshed");
         }
         Ok((Err(e), extras)) => {
+            telemetry::record_refresh(false, 0);
             warn!("forecast xml refresh failed, keeping previous data: {e}");
             if let Some(prev) = prev {
                 state.set_snapshot(Snapshot::with_extras(
