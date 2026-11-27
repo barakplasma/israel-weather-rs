@@ -22,7 +22,7 @@ def client_for(cache):
 
 
 def test_installed_package():
-    assert version("israel-weather-rs") == "0.7.1a1"
+    assert version("israel-weather-rs") == "0.8.1"
 
 
 def test_offline_native_and_normalized_forecast(tmp_path):
