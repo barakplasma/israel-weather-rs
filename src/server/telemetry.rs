@@ -224,10 +224,10 @@ pub async fn http(path: MatchedPath, req: Request, next: Next) -> Response {
 /// locations the snapshot holds.
 pub fn record_refresh(ok: bool, locations: usize) {
     let meter = global::meter("israel-weather-rs");
-    meter
-        .u64_counter("weather.refreshes")
-        .build()
-        .add(1, &[KeyValue::new("result", if ok { "ok" } else { "failed" })]);
+    meter.u64_counter("weather.refreshes").build().add(
+        1,
+        &[KeyValue::new("result", if ok { "ok" } else { "failed" })],
+    );
     if ok {
         meter
             .u64_gauge("weather.forecast.locations")

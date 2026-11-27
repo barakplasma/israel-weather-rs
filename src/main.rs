@@ -118,9 +118,7 @@ fn main() -> ExitCode {
     let args = Args::parse();
     let result = match args.command {
         #[cfg(feature = "server")]
-        Some(Command::Serve(serve_args)) => {
-            serve(serve_args, args.offline).map(|()| String::new())
-        }
+        Some(Command::Serve(serve_args)) => serve(serve_args, args.offline).map(|()| String::new()),
         None => {
             israel_weather_rs::init_logging();
             run(args)
