@@ -1,0 +1,37 @@
+name: Version consistency
+on:
+  pull_request:
+  push:
+    branches: [master]
+    tags: ['*']
+  release:
+    types: [created]
+jobs:
+  versions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Verify versions
+        run: |
+          python - <<'PY'
+          import os, tomllib
+          from pathlib import Path
+          def read(path):
+              return tomllib.loads(Path(path).read_text())
+          version = read("Cargo.toml")["package"]["version"]
+          names = {}
+          for path in ("Cargo.toml", "crates/weather-api/Cargo.toml", "web/Cargo.toml"):
+              package = read(path)["package"]
+              assert package["version"] == version, path
+              names[package["name"]] = version
+          locked = {p["name"]: p["version"] for p in read("Cargo.lock")["package"] if p["name"] in names and "source" not in p}
+          assert locked == names, locked
+          if os.environ.get("GITHUB_REF_TYPE") == "tag":
+              tag = os.environ["GITHUB_REF_NAME"]
+              # Python prereleases have an independent version lifecycle.
+              if not tag.startswith("python-"):
+                  assert tag.removeprefix("v") == version, (tag, version)
+          PY

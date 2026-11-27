@@ -1391,7 +1391,7 @@ checksum = "a6cb138bb79a146c1bd460005623e142ef0181e3d0219cb493e02f7d08a35695"
 
 [[package]]
 name = "israel-weather-rs"
-version = "0.4.0"
+version = "0.8.1"
 dependencies = [
  "axum",
  "cached-path",
@@ -3278,7 +3278,7 @@ dependencies = [
 
 [[package]]
 name = "weather-api"
-version = "0.4.0"
+version = "0.8.1"
 dependencies = [
  "chrono",
  "serde",
@@ -3288,7 +3288,7 @@ dependencies = [
 
 [[package]]
 name = "weather-web"
-version = "0.4.0"
+version = "0.8.1"
 dependencies = [
  "chrono",
  "console_error_panic_hook",
