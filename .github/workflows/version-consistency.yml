@@ -22,6 +22,7 @@ jobs:
           def read(path):
               return tomllib.loads(Path(path).read_text())
           version = read("Cargo.toml")["package"]["version"]
+          assert read("crates/weather-python/Cargo.toml")["package"]["version"] == version, "Python version must match Rust"
           names = {}
           for path in ("Cargo.toml", "crates/weather-api/Cargo.toml", "web/Cargo.toml"):
               package = read(path)["package"]
@@ -31,7 +32,7 @@ jobs:
           assert locked == names, locked
           if os.environ.get("GITHUB_REF_TYPE") == "tag":
               tag = os.environ["GITHUB_REF_NAME"]
-              # Python prereleases have an independent version lifecycle.
+              # Keep existing Python-prefixed tag compatibility.
               if not tag.startswith("python-"):
                   assert tag.removeprefix("v") == version, (tag, version)
           PY
