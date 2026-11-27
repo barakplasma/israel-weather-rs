@@ -1,6 +1,6 @@
 [package]
 name = "israel-weather-python"
-version = "0.7.1-alpha.1"
+version = "0.8.1"
 edition = "2024"
 rust-version = "1.98"
 license = "MIT"
