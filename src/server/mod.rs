@@ -341,6 +341,59 @@ async fn allow_any_origin(mut response: Response) -> Response {
     response
 }
 
+// Only explicitly public, successful responses are eligible for shared caching.
+// Keep browser revalidation separate from the CDN TTL.
+fn cache_policy(path: &str, stale: bool) -> &'static str {
+    if stale {
+        return "no-store";
+    }
+    match path {
+        "/v1/forecast" => "public, max-age=0, s-maxage=300",
+        "/v1/search" => "public, max-age=0, s-maxage=86400",
+        "/openapi.json" => "public, max-age=0, s-maxage=3600",
+        "/api/ims" => "public, max-age=0, s-maxage=60, must-revalidate",
+        _ => match path.split('/').collect::<Vec<_>>().as_slice() {
+            ["", "en" | "he", "full_forecast_data", _] =>
+                "public, max-age=0, s-maxage=900",
+            ["", "en" | "he", "now_analysis", _]
+            | ["", "en" | "he", "warnings"] =>
+                "public, max-age=0, s-maxage=60, must-revalidate",
+            ["", "en" | "he", "radar_satellite"] =>
+                "public, max-age=0, s-maxage=300, must-revalidate",
+            ["", "en" | "he", "locations_info" | "warnings_metadata"
+                | "weather_codes" | "wind_directions" | "regions" | "sea_regions"] =>
+                "public, max-age=0, s-maxage=86400",
+            _ => "no-store",
+        },
+    }
+}
+
+async fn cache_headers(
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Response {
+    let path = request.uri().path().to_owned();
+    let private = request.headers().contains_key(header::AUTHORIZATION)
+        || request.headers().contains_key(header::COOKIE)
+        || request.headers().contains_key("hx-request");
+    let mut response = next.run(request).await;
+    let stale = response.headers().get("x-ims-stale")
+        .is_some_and(|v| v == "true");
+    let policy = if private || stale || !response.status().is_success()
+        || response.headers().contains_key(header::SET_COOKIE) {
+        Some("no-store")
+    } else if response.headers().contains_key(header::CACHE_CONTROL)
+        || response.headers().contains_key(header::EXPIRES) {
+        None
+    } else {
+        Some(cache_policy(&path, false))
+    };
+    if let Some(policy) = policy {
+        response.headers_mut().insert(header::CACHE_CONTROL, HeaderValue::from_static(policy));
+    }
+    response
+}
+
 pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/healthz", get(healthz))
@@ -385,6 +438,7 @@ pub fn router(state: AppState) -> Router {
         ))
         .fallback(web_asset)
         .layer(axum::middleware::map_response(allow_any_origin))
+        .layer(axum::middleware::from_fn(cache_headers))
         .with_state(state)
 }
 
@@ -694,6 +748,27 @@ pub(crate) mod test_support {
 mod tests {
     use super::test_support::*;
     use super::*;
+
+    #[test]
+    fn shared_cache_policy_is_explicit() {
+        assert!(cache_policy("/v1/forecast", false).contains("s-maxage=300"));
+        assert!(cache_policy("/en/full_forecast_data/2", false).contains("s-maxage=900"));
+        assert_eq!(cache_policy("/en/warnings", true), "no-store");
+        assert_eq!(cache_policy("/healthz", false), "no-store");
+        assert_eq!(cache_policy("/api/status", false), "no-store");
+        assert_eq!(cache_policy("/unknown", false), "no-store");
+    }
+
+    #[tokio::test]
+    async fn cache_headers_on_public_and_health_routes() {
+        let (status, headers, _) = request(state_at(NOW), "/v1/search?name=Tel").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(headers[header::CACHE_CONTROL], "public, max-age=0, s-maxage=86400");
+        let (_, headers, _) = request(state_at(NOW), "/healthz").await;
+        assert_eq!(headers[header::CACHE_CONTROL], "no-store");
+        let (_, headers, _) = request(state_at(NOW), "/nope.js").await;
+        assert_eq!(headers[header::CACHE_CONTROL], "no-store");
+    }
 
     #[test]
     fn parse_schedule_accepts_5_and_6_fields() {
