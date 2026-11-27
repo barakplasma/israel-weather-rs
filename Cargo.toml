@@ -56,6 +56,12 @@ tracing-subscriber = { version = "0.3.23", features = [
     "local-time",
 ] }
 utoipa = { version = "6", features = ["chrono"], optional = true }
+# OpenTelemetry (traces, metrics, logs), server only. Exports nothing unless OTEL_EXPORTER_OTLP_*ENDPOINT is set.
+opentelemetry = { version = "0.33", optional = true }
+opentelemetry_sdk = { version = "0.33", optional = true }
+opentelemetry-appender-tracing = { version = "0.33", optional = true }
+opentelemetry-otlp = { version = "0.33", default-features = false, features = ["http-proto", "reqwest-blocking-client", "trace", "metrics", "logs"], optional = true }
+tracing-opentelemetry = { version = "0.34", optional = true }
 
 [target.'cfg(target_arch = "aarch64")'.dependencies]
 openssl = { version = "0.10.81", features = ["vendored"] }
@@ -65,7 +71,7 @@ openssl = { version = "0.10.81", features = ["vendored"] }
 
 [features]
 # `weather serve`: HTTP server with Open-Meteo / MET Norway compatible APIs and an embedded web UI.
-server = ["weather-api/openapi", "dep:utoipa", "dep:axum", "dep:tokio", "dep:cron", "dep:hyper", "dep:hyper-util"]
+server = ["weather-api/openapi", "dep:utoipa", "dep:axum", "dep:tokio", "dep:cron", "dep:hyper", "dep:hyper-util", "dep:opentelemetry", "dep:opentelemetry_sdk", "dep:opentelemetry-appender-tracing", "dep:opentelemetry-otlp", "dep:tracing-opentelemetry"]
 
 [build-dependencies]
 # Pre-compresses the embedded web UI.

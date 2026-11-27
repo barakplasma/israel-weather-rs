@@ -67,7 +67,9 @@ struct ServeArgs {
 fn serve(args: ServeArgs, offline: bool) -> Result<(), Box<dyn std::error::Error>> {
     // Validate before starting the runtime so typos fail fast.
     israel_weather_rs::server::parse_schedule(&args.schedule)?;
-    tokio::runtime::Builder::new_multi_thread()
+    // Before the runtime: the exporters' blocking HTTP client must not start inside it.
+    let telemetry = israel_weather_rs::server::telemetry::init("info");
+    let result = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?
         .block_on(israel_weather_rs::server::serve(
@@ -79,7 +81,9 @@ fn serve(args: ServeArgs, offline: bool) -> Result<(), Box<dyn std::error::Error
                     ims_json: args.ims_json,
                 },
             },
-        ))
+        ));
+    telemetry.shutdown();
+    result
 }
 
 fn parse_now(s: &str) -> Result<DateTime<Utc>, String> {
@@ -115,7 +119,6 @@ fn main() -> ExitCode {
     let result = match args.command {
         #[cfg(feature = "server")]
         Some(Command::Serve(serve_args)) => {
-            israel_weather_rs::init_logging_with_default("info");
             serve(serve_args, args.offline).map(|()| String::new())
         }
         None => {
