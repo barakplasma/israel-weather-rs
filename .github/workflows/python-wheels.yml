@@ -25,7 +25,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.10'
       - uses: PyO3/maturin-action@v1
@@ -48,7 +48,7 @@ jobs:
           python -m pip install dist/*.whl
           python -m pip check
           python -m pytest crates/weather-python/tests
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.14'
       - name: Install and test same ABI3 wheel on Python 3.14
