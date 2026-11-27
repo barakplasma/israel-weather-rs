@@ -68,7 +68,8 @@ fn serve(args: ServeArgs, offline: bool) -> Result<(), Box<dyn std::error::Error
     // Validate before starting the runtime so typos fail fast.
     israel_weather_rs::server::parse_schedule(&args.schedule)?;
     // Before the runtime: the exporters' blocking HTTP client must not start inside it.
-    let telemetry = israel_weather_rs::server::telemetry::init("info");
+    let sentry = israel_weather_rs::server::error_reporting::init();
+    let telemetry = israel_weather_rs::server::telemetry::init("info", sentry.is_some());
     let result = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?
@@ -82,6 +83,8 @@ fn serve(args: ServeArgs, offline: bool) -> Result<(), Box<dyn std::error::Error
                 },
             },
         ));
+    // Flush error reports first (2 s cap), then the OTel exporters.
+    drop(sentry);
     telemetry.shutdown();
     result
 }

@@ -79,7 +79,7 @@ fn timeout_for(signal: &str) -> Duration {
 
 /// Installs the global logger. Run before the async runtime starts: the blocking HTTP
 /// client of the exporters must not be created inside it.
-pub fn init(default_filter: &str) -> Telemetry {
+pub fn init(default_filter: &str, error_reporting: bool) -> Telemetry {
     let mut t = Telemetry::default();
     let resource = opentelemetry_sdk::Resource::builder().build();
 
@@ -161,6 +161,7 @@ pub fn init(default_filter: &str) -> Telemetry {
         .with(fmt)
         .with(trace_layer)
         .with(log_layer)
+        .with(error_reporting.then(super::error_reporting::layer))
         .try_init();
     t
 }

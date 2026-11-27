@@ -8,6 +8,7 @@
 
 mod api;
 pub mod codes;
+pub mod error_reporting;
 mod ims_website;
 mod metno;
 mod openapi;
