@@ -1,6 +1,6 @@
 # Native Python bindings (PyO3 + Maturin)
 
-Status: prerelease candidate; CI must pass before distribution.
+Status: stable 0.8.1; release wheels are attached after CI passes.
 
 ```mermaid
 flowchart TD
@@ -24,7 +24,7 @@ Future: filtered warnings, richer native Python payload stubs, datetime objects,
 
 ## Compatibility facade
 
-`from israel_weather import WeatherIL` provides the same positional constructor (location, language="he", cache_expiration_in_sec=30), four primary methods and named result dataclasses with timezone-aware dates. It uses the native Client, not requests. Expose the raw and normalized extensions through Client and weather.client. Missing values are None; image lists are supported but animation and private helper modules are not in the prerelease. No conflicting `weatheril` import is installed. Credit: [py-weatheril](https://github.com/t0mer/py-weatheril) (MIT).
+`from israel_weather import WeatherIL` provides the same positional constructor (location, language="he", cache_expiration_in_sec=30), four primary methods and named result dataclasses with timezone-aware dates. It uses the native Client, not requests. Expose the raw and normalized extensions through Client and weather.client. Missing values are None; image lists are supported but animation and private helper modules are not currently supported. No conflicting `weatheril` import is installed. Credit: [py-weatheril](https://github.com/t0mer/py-weatheril) (MIT).
 
 ## CI infrastructure
 
