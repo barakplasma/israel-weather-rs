@@ -58,7 +58,7 @@ jobs:
           python -m pip install dist/*.whl
           python -m pip check
           python -m pytest crates/weather-python/tests
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: wheels-${{ matrix.runner }}-${{ matrix.target }}
           path: dist/*.whl
